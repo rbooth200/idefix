@@ -52,6 +52,9 @@ DataBlockHost::DataBlockHost(DataBlock& datain) {
   Uc = Kokkos::create_mirror_view(data->hydro->Uc);
   InvDt = Kokkos::create_mirror_view(data->hydro->InvDt);
 
+  if (data->haveRadiation)
+    Erad = Kokkos::create_mirror_view(data->radiation->Erad);
+
 #if MHD == YES
   Vs = Kokkos::create_mirror_view(data->hydro->Vs);
   this->haveCurrent = data->hydro->haveCurrent;

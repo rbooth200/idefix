@@ -144,6 +144,27 @@ DataBlock::DataBlock(Grid &grid, Input &input) {
     this->haveGravity = true;
   }
 
+  // Initialise radiation if needed
+  if(input.CheckBlock("Radiation")) {
+    this->radiation = std::make_unique<TwoTemperatureFLD>(input, this);
+    this->haveRadiation = true;
+  }
+
+  if(input.CheckBlock("Irradiation")) {
+    std::string type =  input.GetOrSet<std::string>("Irradiation","type", 0, "sph_long_char");
+    if (type == "sph_long_char")
+      this->irradiation = std::make_unique<LongCharIrradiation>(input, this);
+    else if (type == "sph_short_char")
+      this->irradiation = std::make_unique<SphericalShortChar>(input, this);
+    else {
+      std::stringstream msg;
+      msg << "FLD:: Unknown Irradiation model: " << type;
+      IDEFIX_ERROR(msg);
+    } 
+
+    this->haveIrradiation = true ;
+  }
+
   // Initialise dust grains if needed
   if(input.CheckBlock("Dust")) {
     haveDust = true;
@@ -314,6 +335,8 @@ void DataBlock::ShowConfig() {
   if(haveFargo) fargo->ShowConfig();
   if(haveplanetarySystem) planetarySystem->ShowConfig();
   if(haveGravity) gravity->ShowConfig();
+  if(haveRadiation) radiation->ShowConfig();
+  if(haveIrradiation) irradiation->ShowConfig();
   if(haveUserStepFirst) idfx::cout << "DataBlock: User's first step has been enrolled."
                                    << std::endl;
   if(haveUserStepLast) idfx::cout << "DataBlock: User's last step has been enrolled."

@@ -60,6 +60,8 @@ Grid::Grid(Input &input) {
     if(dir<DIMENSIONS) {
       #if ORDER < 4
         nghost[dir] = 2;
+        // the following should be done only when preconditioning is needed
+        if(input.CheckBlock("Radiation") >= 0) nghost[dir] = 3;
       #else
         nghost[dir] = 3;
       #endif

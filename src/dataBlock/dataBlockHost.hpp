@@ -34,6 +34,7 @@ class DataBlockHost {
   std::array<IdefixHostArray3D<real>,3> A;   ///< cell right interface area
 
   IdefixHostArray4D<real> Vc;     ///< Main cell-centered primitive variables index
+  IdefixHostArray3D<real> Erad;   ///< Radiation Energy density.
 
   bool haveDust{false};
   std::vector<IdefixHostArray4D<real>> dustVc; ///< Cell-centered primitive variables index for dust

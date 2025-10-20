@@ -103,6 +103,13 @@ void TimeIntegrator::ShowLog(DataBlock &data) {
     lastSGLog = data.gravity->selfGravity.elapsedTime;
   }
 
+  double FLDOverhead;
+  if(data.haveRadiation) {
+    double FLDCycleTime = data.radiation->elapsedTime - lastRadiationLog;
+    FLDOverhead = 100.0 * FLDCycleTime / (timer.seconds() - lastLog);
+    lastRadiationLog = data.radiation->elapsedTime;
+  }
+
   lastLog = timer.seconds();
 
 
@@ -129,6 +136,11 @@ void TimeIntegrator::ShowLog(DataBlock &data) {
       idfx::cout << " | " << std::setw(col_width) << "SG iterations";
       idfx::cout << " | " << std::setw(col_width) << "SG error";
       idfx::cout << " | " << std::setw(col_width) << "SG overhead (%)";
+    }    
+    if(data.haveRadiation) {
+      idfx::cout << " | " << std::setw(col_width) << "FLD iterations";
+      idfx::cout << " | " << std::setw(col_width) << "FLD error";
+      idfx::cout << " | " << std::setw(col_width) << "FLD overhead (%)";
     }
     idfx::cout << std::endl;
   }
@@ -184,6 +196,19 @@ void TimeIntegrator::ShowLog(DataBlock &data) {
       idfx::cout << " | " << std::setw(col_width) << data.gravity->selfGravity.currentError;
       idfx::cout << std::fixed;
       idfx::cout << " | " << std::setw(col_width) << sgOverhead;
+    } else {
+      idfx::cout << " | " << std::setw(col_width) << "N/A";
+      idfx::cout << " | " << std::setw(col_width) << "N/A";
+      idfx::cout << " | " << std::setw(col_width) << "N/A";
+    }
+  }
+  if(data.haveRadiation) {
+    if(ncycles>=cyclePeriod) {
+      idfx::cout << " | " << std::setw(col_width) << data.radiation->nsteps;
+      idfx::cout << std::scientific;
+      idfx::cout << " | " << std::setw(col_width) << data.radiation->currentError;
+      idfx::cout << std::fixed;
+      idfx::cout << " | " << std::setw(col_width) << FLDOverhead;
     } else {
       idfx::cout << " | " << std::setw(col_width) << "N/A";
       idfx::cout << " | " << std::setw(col_width) << "N/A";
@@ -351,6 +376,10 @@ void TimeIntegrator::Cycle(DataBlock &data) {
   /////////////////////////////////////////////////
   // END STAGES LOOP                             //
   /////////////////////////////////////////////////
+   // solve radiation
+  
+  if(data.haveIrradiation) data.irradiation->ComputeIrradiation() ;
+  if(data.haveRadiation) data.radiation->SolveSystem();
 
   // Wait for dt MPI reduction
 #ifdef WITH_MPI
