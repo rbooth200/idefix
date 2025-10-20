@@ -333,6 +333,7 @@ target_include_directories(idefix-core PUBLIC
                            src/output
                            src/rkl
                            src/gravity
+                           src/radiation
                            src/utils
                            src/utils/iterativesolver
                            src/mpi

@@ -30,6 +30,9 @@
 #include "gravity.hpp"
 #include "stateContainer.hpp"
 
+#include "FLD.hpp"
+#include "irradiation.hpp"
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 /// The DataBlock class is designed to store the data and child class instances that belongs to the
 /// current MPI process ONLY.  In particular grid-related arrays of the DataBlock
@@ -171,7 +174,14 @@ class DataBlock {
   // Do we have Gravity ?
   bool haveGravity{false};
   std::unique_ptr<Gravity> gravity;
+  
+  // Do we have Radiation ?
+  bool haveIrradiation{false} ;
+  std::unique_ptr<Irradiation> irradiation ;
 
+  bool haveRadiation{false};
+  std::unique_ptr<FluxLimitedDiffusion> radiation;
+  
   // User step functions (before or after the main integrator step)
   void LaunchUserStepFirst();     ///< perform user-defined step before main integration step
   void LaunchUserStepLast();      ///< Perform user-defined step after main integration step
