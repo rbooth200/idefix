@@ -99,15 +99,18 @@ class FluxLimitedDiffusion {
   FluxLimitedDiffusion(Input&, DataBlock*);
  
   void Init(Input &, DataBlock *);  // Initialisation of the class attributes
-  void ShowConfig();                // display current configuration
+  virtual void ShowConfig();        // display current configuration
   void InitSolver();                // (Re)initialisation of the solver for a given density distribution
   virtual void FillUtils() = 0;
-  virtual void FillMatrix() = 0;
+  virtual void FillMatrixCouplingTerms() = 0;
+
  
   void PreconditionMatrix();   // For preconditioning versions
   void PreconditionErad(bool undo=false);
  
   void FillFluxLimiter(IdefixArray4D<real> rho_kappaR, IdefixArray3D<real> lambda);
+  void FillMatrixTransportTerms();
+
 
   virtual void UpdatePressure() = 0; // Update pressure with new radiation field
   void SolveSystem() ; // Solve Radiation equation
@@ -147,6 +150,7 @@ class FluxLimitedDiffusion {
   DataBlock *data;  // My parent data object
   IdefixArray3D<real> precond;  // Diagonal preconditioner
   IdefixArray3D<real> rhs;   // Right hand side -> same units as Erad
+  IdefixArray3D<real> nu;    // λ c dt / (kR ρ) -> diffusivity
 
   real dt;  // CFL timestep
 
@@ -167,7 +171,6 @@ class FluxLimitedDiffusion {
 
   bool havePreconditioner{false}; // Use of preconditioner (or not)
   bool haveInitialisedRadiation{false}; // whether the radiation field has already been initialised
-  bool multispecies{false};
   int num_species{1};
 } ;
 
@@ -178,17 +181,42 @@ class TwoTemperatureFLD
   TwoTemperatureFLD(Input&, DataBlock*);
 
   void Init(Input &, DataBlock *);  // Initialisation of the class attributes
+  void ShowConfig();                // display current configuration
+
     
   void FillUtils(); // fill utility arrays and rhs
-  void FillMatrix(); // fill matrix for the radiation solver
+  void FillMatrixCouplingTerms(); // fill matrix for the radiation solver
 
   void UpdatePressure(); // Update pressure with new radiation field
 
  private:
   IdefixArray4D<real> radY;  // κP ρ c dt -> dimensionless
   IdefixArray4D<real> radX;  // aR T^3 radY / (ρ cV) -> dimensionless
-  IdefixArray3D<real> nu;    // λ c dt / (kR ρ) -> diffusivity
+};
+
+
+class MultiSpeciesFLD 
+  : public FluxLimitedDiffusion {
+ public:
+
+  MultiSpeciesFLD(Input&, DataBlock*);
+
+  void Init(Input &, DataBlock *);  // Initialisation of the class attributes
+  void ShowConfig();                // display current configuration
+
+    
+  void FillUtils(); // fill utility arrays and rhs
+  void FillMatrixCouplingTerms(); // fill matrix for the radiation solver
+
+  void UpdatePressure(); // Update pressure with new radiation field
+
+ private:
+  IdefixArray4D<real> radZ, radGamma;  //
+  IdefixArray4D<real> kappaP, kappaR;  //
+  IdefixArray3D<real> k_eff, cV_eff, u_eff, l_eff; //
 
 };
+
+
 
 #endif // RADIATION_FLD_HPP_

@@ -27,38 +27,53 @@ class Column;
 
 class Irradiation {
  protected:
-  enum OpacityType {constant} ;
-  using ColumnBoundaryFunc = void(*) (DataBlock*, IdefixArray3D<real>) ;
+  enum OpacityType {constant, userconst};
+  using ColumnBoundaryFunc = void(*) (DataBlock*, IdefixArray3D<real>);
+  using UserOpacityFunc = void(*) (DataBlock*, IdefixArray2D<real>);
+  using UserRadiationFunc = void(*) (DataBlock*, IdefixArray1D<real>);
+
+
 
  public:
   Irradiation(Input&, DataBlock*);
   
-  virtual void ShowConfig() = 0;
+  virtual void ShowConfig();
   virtual void ComputeIrradiation() = 0;
+  virtual void GetBoundaryFlux(int dir, int side, IdefixArray2D<real>) = 0;
 
   void UpdatePressure();
 
-  IdefixArray3D<real> boundaryColumn ; ///< Column Density at the inner edge of the disc.
+  IdefixArray3D<real> boundaryColumn; ///< Column Density at the inner edge of the disc.
   void InitBoundaryColumnToZero();
   void EnrollUserColumnBoundary(ColumnBoundaryFunc);
+  void EnrollUserOpacity(UserOpacityFunc);
+  void EnrollUserRadiationField(UserRadiationFunc);
 
   IdefixArray4D<real> irradiationHeating; ///< Heating rate per unit volume due to stellar irradiation
-  bool multispecies;
   int num_species;
+  int num_bands;
 
  protected:
   DataBlock* data;
 
-  int num_bands;
   IdefixArray2D<real> kappa; 
+  IdefixArray1D<real> radiation_field; // Luminosity/flux dependening on geometry.
 
-  OpacityType opacityType;
 
   real unit_luminosity, unit_opacity;
 
-  bool haveUserColumnBoundary ;
-  ColumnBoundaryFunc UserDefColumnBoundary ;
-} ;
+  bool haveUserColumnBoundary;
+  ColumnBoundaryFunc UserDefColumnBoundary;
+
+  bool haveUserOpacity;
+  UserOpacityFunc user_opacity;
+  OpacityType opacityType;
+
+
+  bool haveUserRadiationField;
+  UserRadiationFunc user_radiation;
+  OpacityType radiationType;
+};
 
 // Long characteristic irradiation from a point source at the origin
 class LongCharIrradiation
@@ -71,12 +86,13 @@ class LongCharIrradiation
   LongCharIrradiation(Input&, DataBlock*);
   ~LongCharIrradiation();
   
-  void ShowConfig(){};
+  void ShowConfig();
 
-  void ComputeIrradiation() ;
+  void ComputeIrradiation();
+  void GetBoundaryFlux(int dir, int side, IdefixArray2D<real>);
 
-  IdefixArray3D<real> localOffset ; 
-  IdefixArray3D<real> globalOffset ;
+  IdefixArray3D<real> localOffset; 
+  IdefixArray3D<real> globalOffset;
 
   int radialRank; // Rank in the radial communicator, default to 0
   int radialSize; // Size of the radial communicator, default to 1
@@ -85,11 +101,9 @@ class LongCharIrradiation
   #endif
 
  private:
-  IdefixArray4D<real> column ;
-  IdefixArray1D<real> luminosity;
-
+  IdefixArray4D<real> column;
   Column* column_sum = NULL;
-} ;
+};
 
 
 
@@ -124,14 +138,16 @@ class SphericalShortChar
     void compute_heating_rate();
 
     void dump_rays(std::ostream& f) const; 
-    void dump_heating(std::ostream& f) const ;
-    void dump_tau(std::ostream& f) const ;
+    void dump_heating(std::ostream& f) const;
+    void dump_tau(std::ostream& f) const;
 
     void ComputeIrradiation() {
       compute_optical_depths();
       compute_heating_rate();
     }
-    void ShowConfig(){};
+    void GetBoundaryFlux(int dir, int side, IdefixArray2D<real>);
+
+    void ShowConfig();
   
   private:
     void _build_rays(HostRayInfo&);
@@ -147,10 +163,13 @@ class SphericalShortChar
     IdefixArray2D<int> _cells_in_order;
     int _max_order;
 
+    // Store boundary optical depth
+    IdefixArray3D<real> _tau_boundary; ///< Optical Depth at the inner edge of the domain.
+
+
   public:
     IdefixArray4D<double> exp_tau, kapp;
   private:
-    IdefixArray1D<real> F0;
     IdefixArray4D<double> rho_all;
 };
 
