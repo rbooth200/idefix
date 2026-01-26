@@ -100,11 +100,11 @@ enum class LoopPattern { SIMDFOR, RANGE, MDRANGE, TPX, TPTTRTVR, UNDEFINED };
 #if MHD == YES
   #define NFLX (1 + 2*COMPONENTS + HAVE_ENERGY)
   #define TRG   NFLX                  // Gas Tracer index
-  #define TRD  (NFLX-COMPONENTS)      // Dust Tracer index
+  #define TRD  (NFLX-1-COMPONENTS)    // Dust Tracer index
 #else
   #define NFLX (1 + COMPONENTS + HAVE_ENERGY)
-  #define TRG  NFLX
-  #define TRD  NFLX
+  #define TRG   NFLX
+  #define TRD  (NFLX-1)
 #endif
 
 // Face-centered variables

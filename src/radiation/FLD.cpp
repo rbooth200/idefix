@@ -235,19 +235,8 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
   } else this->fluxLimiterType = Kley1989;
 
 
-  // Do we allow each species to have independent temperatures?
-  if (input.GetOrSet<bool>("Radiation","SeperateTemperatures",0, false)) {
-    
-    if(input.CheckBlock("Dust")) {
-      multispecies = true;
-      num_species = 1 + input.Get<int>("Dust","nSpecies",0);
-
-      if(input.CheckEntry("Dust","tracer")==0) {
-        IDEFIX_ERROR("At least one dust tracer is needed to store the temperature when "
-                     "separate temperatures are used in FLD");
-      }
-
-    }
+  if(input.CheckBlock("Dust")) {
+    num_species = 1 + input.Get<int>("Dust","nSpecies",0);
   }
 
   // configure Rosseland opacity
@@ -374,6 +363,11 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
                                             data->np_tot[JDIR],
                                             data->np_tot[IDIR]);
 
+  this->nu = IdefixArray3D<real> ("RadiationDiffusivity", data->np_tot[KDIR],
+                                                          data->np_tot[JDIR],
+                                                          data->np_tot[IDIR]);
+
+
   if (this->havePreconditioner) {
     this->precond = IdefixArray3D<real> ("Preconditioner",  data->np_tot[KDIR],
                                                             data->np_tot[JDIR],
@@ -391,6 +385,7 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
     KOKKOS_LAMBDA (int k, int j, int i) {
       Erad(k,j,i) = ZERO_F;
       rhs (k,j,i) = ZERO_F;
+      nu  (k,j,i) = ZERO_F;
       if (havePreconditioner) P(k,j,i) = ONE_F;
     });
 
@@ -408,78 +403,6 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
   rvalue = FLD_matrix->rvalue; 
 
   idfx::popRegion();
-}
-
-// done
-void FluxLimitedDiffusion::ShowConfig() {
-  idfx::cout << "FLD: Using ";
-  switch(solver) {
-    case BICGSTAB:
-      idfx::cout << "unpreconditioned BICGSTAB";
-      break;
-    case PBICGSTAB:
-      idfx::cout << "preconditioned BICGSTAB";
-      break;
-    case PCG:
-      idfx::cout << "preconditioned CG";
-      break;
-    case CG:
-      idfx::cout << "unpreconditioned CG";
-      break;
-    case MINRES:
-      idfx::cout << "unpreconditioned MinRes";
-      break;
-    case PMINRES:
-      idfx::cout << "preconditioned MinRes";
-      break;
-    default:
-      IDEFIX_ERROR("FLD:: Unknown solver");
-  }
-  idfx::cout << " solver." << std::endl;
-
-  idfx::cout << "FLD: Flux limiter is ";
-  switch(fluxLimiterType) {
-    case one_third:
-      idfx::cout << "1/3";
-      break;
-    case Kley1989:
-      idfx::cout << "Kley 1989";
-      break;
-    case Minerbo1978:
-      idfx::cout << "Minerbo 1978";
-      break;
-    case LevermorePomraning1981:
-      idfx::cout << "Levermore-Pomraning 1981";
-      break;
-    case userdeffluxlimiter:
-      idfx::cout << "user defined";
-      break;
-    default:
-      IDEFIX_ERROR("FLD:: Unknown flux limiter");
-  }
-  idfx::cout << "." << std::endl;
-
-  idfx::cout << "FLD: Opacity is ";
-  switch(opacityType) {
-    case constantkappa:
-      idfx::cout << "constant";
-      break;
-    case userdefkappa:
-      idfx::cout << "user defined";
-      break;
-    default:
-      IDEFIX_ERROR("FLD:: Unknown opacity");
-  }
-  idfx::cout << "." << std::endl;
-
-  // idfx::cout << "FLD: target L2 norm error=" << targetError << "." << std::endl;
-
-  // The setup is periodic if it passes the previous boundary loading
-  if(this->isPeriodic == true) {
-    idfx::cout << "FLD: Setup is periodic, doing nothing." << std::endl;
-  }
-
-  iterativeSolver->ShowConfig();
 }
 
 // Compute the flux limiter for each cell
@@ -515,7 +438,6 @@ void FluxLimitedDiffusion::FillFluxLimiter(IdefixArray4D<real> rho_kappaR, Idefi
   IdefixArray3D<real> Erad = this->Erad;
 
   const FluxLimiterType fluxLimiterType = this->fluxLimiterType ;
-  const real u_opac = data->radiation->unit_opacity ;
 
   idefix_for("SetFluxLimiter", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
@@ -541,7 +463,7 @@ void FluxLimitedDiffusion::FillFluxLimiter(IdefixArray4D<real> rho_kappaR, Idefi
       )
 
       // Compute R and store in lambda
-      const real rho_kapp = rho_kappaR(0,k,j,i) / u_opac ;
+      const real rho_kapp = rho_kappaR(0,k,j,i) ;
       real R = (1.0/rho_kapp) * sqrt(normE2) / Erad(k,j,i);
 
       switch(fluxLimiterType) {
@@ -668,7 +590,9 @@ void FluxLimitedDiffusion::InitSolver() {
   FLD_matrix->SetBoundaries(Erad, true);
 
   FillUtils();
-  FillMatrix();
+  FillMatrixCouplingTerms();
+  FillMatrixTransportTerms();
+
 
   idfx::popRegion();
 }
@@ -966,6 +890,224 @@ void FluxLimitedDiffusion::SolveSystem() {
 }
 
 
+void FluxLimitedDiffusion::FillMatrixTransportTerms() {
+  idfx::pushRegion("FLD::FillMatrixTransportTerms");
+
+  int ibeg, iend, jbeg, jend, kbeg, kend;
+  ibeg = data->beg[IDIR]; iend = data->end[IDIR];
+  jbeg = data->beg[JDIR]; jend = data->end[JDIR];
+  kbeg = data->beg[KDIR]; kend = data->end[KDIR];
+
+  // If preconditioning, we need the diagonal matrix elements in the ghost cells.
+  // See FillFluxLimiter for explanation.
+  const int pad = this->havePreconditioner;
+  D_EXPAND(
+    ibeg -= pad; iend += pad;,
+    jbeg -= pad; jend += pad;,
+    kbeg -= pad; kend += pad;
+  )
+
+  IdefixArray4D<real> M    = FLD_matrix->M;
+  IdefixArray3D<real> rhs  = this->rhs;
+  IdefixArray3D<real> P    = this->precond;
+  IdefixArray3D<real> Erad = this->Erad;
+  IdefixArray3D<real> nu   = this->nu;
+  IdefixArray3D<real> dV = data->dV;
+  
+  const real dt = this->dt ;
+
+  bool havePreconditioner = this->havePreconditioner;
+
+  D_EXPAND( // dimensions = 0, 1, 2
+    IdefixArray1D<real> x1  = data->x[IDIR];
+    IdefixArray1D<real> x1l = data->xl[IDIR];
+    IdefixArray1D<real> x1r = data->xr[IDIR];
+    IdefixArray1D<real> dx1 = data->dx[IDIR];
+    IdefixArray3D<real> Ax1 = data->A[IDIR];
+  ,
+    IdefixArray1D<real> x2  = data->x[JDIR];
+    IdefixArray1D<real> x2l = data->xl[JDIR];
+    IdefixArray1D<real> x2r = data->xr[JDIR];
+    IdefixArray1D<real> dx2 = data->dx[JDIR];
+    IdefixArray3D<real> Ax2 = data->A[JDIR];
+  ,
+    IdefixArray1D<real> x3  = data->x[KDIR];
+    IdefixArray1D<real> x3l = data->xl[KDIR];
+    IdefixArray1D<real> x3r = data->xr[KDIR];
+    IdefixArray1D<real> dx3 = data->dx[KDIR];
+    IdefixArray3D<real> Ax3 = data->A[KDIR];
+    #if GEOMETRY == SPHERICAL
+    IdefixArray1D<real> sinth = data->sinx2;
+    #endif
+  )
+
+  real lvalue[3], rvalue[3] ;
+  FLDMatrix::RadiationBoundaryType lbound[3], rbound[3] ; 
+
+  for (int dir = 0; dir < DIMENSIONS; dir++) {
+    lbound[dir] = this->lbound[dir] ;
+    rbound[dir] = this->rbound[dir] ;
+    lvalue[dir] = this->lvalue[dir] ;
+    rvalue[dir] = this->rvalue[dir] ;
+  }
+
+  int num_species = this->num_species;
+
+  idefix_for("FiniteDifference", kbeg, kend, jbeg, jend, ibeg, iend,
+    KOKKOS_LAMBDA (int k, int j, int i) {
+
+      D_EXPAND( real h1;, real h2;, real h3;) 
+      #if GEOMETRY == CARTESIAN
+      D_EXPAND(h1 = 1.;, h2 = 1.;, h3 = 1.;)
+      #elif GEOMETRY == POLAR
+      D_EXPAND(h1 = 1.;, h2 = x1(i);, h3 = 1.;)
+      #else
+      D_EXPAND(h1 = 1.;, h2 = x1(i);, h3 = x1(i) * sinth(j);)
+      #endif
+
+#ifndef SECOND_ORDER_FLUXES
+      D_EXPAND(
+        const real nu1m = lageval1(x1(i-1), x1(i), nu(k,j,i-1), nu(k,j,i  ), x1l(i));
+        const real nu1p = lageval1(x1(i), x1(i+1), nu(k,j,i  ), nu(k,j,i+1), x1r(i));
+        M(1,k,j,i) = -dt * 2./h1 * nu1m * Ax1(k,j,i)   / (dx1(i) + dx1(i-1)) / dV(k,j,i);
+        M(2,k,j,i) = -dt * 2./h1 * nu1p * Ax1(k,j,i+1) / (dx1(i) + dx1(i+1)) / dV(k,j,i);
+        M(0,k,j,i) -= M(1,k,j,i) + M(2,k,j,i);
+      ,
+        const real nu2m = lageval1(x2(j-1), x2(j), nu(k,j-1,i), nu(k,j  ,i), x2l(j));
+        const real nu2p = lageval1(x2(j), x2(j+1), nu(k,j  ,i), nu(k,j+1,i), x2r(j));
+        M(3,k,j,i) = -dt * 2./h2 * nu2m * Ax2(k,j,i)   / (dx2(j) + dx2(j-1)) / dV(k,j,i);
+        M(4,k,j,i) = -dt * 2./h2 * nu2p * Ax2(k,j+1,i) / (dx2(j) + dx2(j+1)) / dV(k,j,i);
+        M(0,k,j,i) -= M(3,k,j,i) + M(4,k,j,i);
+      ,
+        const real nu3m = lageval1(x3(k-1), x3(k), nu(k-1,j,i), nu(k  ,j,i), x3l(k));
+        const real nu3p = lageval1(x3(k), x3(k+1), nu(k  ,j,i), nu(k+1,j,i), x3r(k));
+        M(5,k,j,i) = -dt * 2./h3 * nu3m * Ax3(k,j,i)   / (dx3(k) + dx3(k-1)) / dV(k,j,i);
+        M(6,k,j,i) = -dt * 2./h3 * nu3p * Ax3(k+1,j,i) / (dx3(k) + dx3(k+1)) / dV(k,j,i);
+        M(0,k,j,i) -= M(5,k,j,i) + M(6,k,j,i);
+      )
+#else 
+D_EXPAND(
+        M(1,k,j,i) = -dt * 2./h1 * 1/(dx1(i)/nu(k,j,i) + dx1(i-1)/nu(k,j,i-1)) * Ax1(k,j,i) / dV(k,j,i);
+        M(2,k,j,i) = -dt * 2./h1 * 1/(dx1(i)/nu(k,j,i) + dx1(i+1)/nu(k,j,i+1)) * Ax1(k,j,i+1) / dV(k,j,i);
+        M(0,k,j,i) -= M(1,k,j,i) + M(2,k,j,i);
+      ,
+        M(3,k,j,i) = -dt * 2./h2 * 1/(dx2(j)/nu(k,j,i) + dx2(j-1)/nu(k,j-1,i)) * Ax2(k,j,i) / dV(k,j,i);
+        M(4,k,j,i) = -dt * 2./h2 * 1/(dx2(j)/nu(k,j,i) + dx2(j+1)/nu(k,j+1,i)) * Ax2(k,j+1,i) / dV(k,j,i);
+        M(0,k,j,i) -= M(3,k,j,i) + M(4,k,j,i);
+      ,
+        M(5,k,j,i) = -dt * 2./h3 * 1/(dx3(k)/nu(k,j,i) + dx3(k-1)/nu(k-1,j,i)) * Ax3(k,j,i) / dV(k,j,i);
+        M(6,k,j,i) = -dt * 2./h3 * 1/(dx3(k)/nu(k,j,i) + dx3(k+1)/nu(k+1,j,i)) * Ax3(k+1,j,i) / dV(k,j,i);
+        M(0,k,j,i) -= M(5,k,j,i) + M(6,k,j,i);
+      )
+#endif
+      // now handle boundary conditions
+      real delta ;
+      D_EXPAND(
+        if (i == ibeg+pad) {
+          switch(lbound[0]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx1(i-1)*nu(k,j,i) / (dx1(i)*nu(k,j,i-1)) ;
+              M(0,k,j,i) -= M(1,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k,j,i-1) * M(1,k,j,i) * (1 + delta);
+              M(1,k,j,i) = 0;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              M(0,k,j,i) += M(1,k,j,i);
+              real dx_nu = 0.5*dx1(i-1) / nu(k,j,i-1) + 0.5*dx1(i) / nu(k,j,i);
+              rhs(k,j,i) += lvalue[0] * M(1,k,j,i) * dx_nu;
+              M(1,k,j,i) = 0;
+              break ;
+          }
+        } else if (i == iend-1-pad) {
+          switch(rbound[0]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx1(i+1)*nu(k,j,i) / (dx1(i)*nu(k,j,i+1)) ;
+              M(0,k,j,i) -= M(2,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k,j,i+1) * M(2,k,j,i) * (1 + delta) ;
+              M(2,k,j,i) = 0;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              M(0,k,j,i) += M(2,k,j,i);
+              real dx_nu = 0.5*dx1(i+1) / nu(k,j,i+1) + 0.5*dx1(i) / nu(k,j,i);
+              rhs(k,j,i) += rvalue[0] * M(2,k,j,i) * dx_nu;
+              M(2,k,j,i) = 0;
+              break ;
+          } 
+        }
+        ,
+         if (j == jbeg+pad) {
+          switch(lbound[1]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx2(j-1)*nu(k,j,i) / (dx2(j)*nu(k,j-1,i)) ;
+              M(0,k,j,i) -= M(3,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k,j-1,i) * M(3,k,j,i) * (1 + delta) ;
+              M(3,k,j,i) = 0;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              M(0,k,j,i) += M(3,k,j,i);
+              const real dx_nu = 0.5*dx2(j-1) / nu(k,j-1,i) + 0.5*dx2(j) / nu(k,j,i);
+              rhs(k,j,i) += lvalue[1] * M(3,k,j,i) * dx_nu;
+              M(3,k,j,i) = 0;
+              break ;
+          }
+        } else if (j == jend-1-pad) {
+          switch(rbound[1]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx2(j+1)*nu(k,j,i) / (dx2(j)*nu(k,j+1,i)) ;
+              M(0,k,j,i) -= M(4,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k,j+1,i) * M(4,k,j,i) * (1 + delta) ;
+              M(4,k,j,i) = 0;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              M(0,k,j,i) += M(4,k,j,i);
+              const real dx_nu = 0.5*dx2(j+1) / nu(k,j+1,i) + 0.5*dx1(j) / nu(k,j,i);
+              rhs(k,j,i) += rvalue[1] * M(4,k,j,i) * dx_nu;
+              M(4,k,j,i) = 0;
+              break ;
+          } 
+        }
+        ,
+        if (k == kbeg+pad) {
+          switch(lbound[2]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx3(k-1)*nu(k,j,i) / (dx3(k)*nu(k-1,j,i)) ;
+              M(0,k,j,i) -= M(5,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k-1,j,i) * M(5,k,j,i) * (1 + delta) ;
+              M(5,k,j,i) = 0 ;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              const real dx_nu = 0.5*dx3(k-1) / nu(k-1,j,i) + 0.5*dx3(k) / nu(k,j,i);
+              rhs(k,j,i) += lvalue[2] * M(5,k,j,i) * dx_nu;
+              M(0,k,j,i) += M(5,k,j,i);
+              M(5,k,j,i) = 0 ;
+              break ;
+          }
+        } else if (k == kend-1-pad) {
+          switch(rbound[2]) {
+            case FLDMatrix::RadiationBoundaryType::dirichlet:
+              delta = dx3(k+1)*nu(k,j,i) / (dx3(k)*nu(k+1,j,i)) ;
+              M(0,k,j,i) -= M(6,k,j,i) * delta ;
+              rhs(k,j,i) -= Erad(k+1,j,i) * M(6,k,j,i) * (1+delta) ;
+              M(6,k,j,i) = 0;
+              break ;
+            case FLDMatrix::RadiationBoundaryType::neumann:
+              M(0,k,j,i) += M(6,k,j,i);
+              const real dx_nu = 0.5*dx2(k+1) / nu(k+1,j,i) + 0.5*dx3(k) / nu(k,j,i);
+              rhs(k,j,i) += rvalue[2] * M(6,k,j,i) * dx_nu;
+              M(6,k,j,i) = 0;
+          break ;
+          } 
+        }
+      )
+
+      if (havePreconditioner) P(k,j,i) = sqrt(fabs(M(0,k,j,i)));
+    });
+  
+  idfx::popRegion();
+}
+
+
+
 TwoTemperatureFLD::TwoTemperatureFLD(Input &input, DataBlock *datain) 
   : FluxLimitedDiffusion(input, datain)
 {
@@ -979,10 +1121,6 @@ void TwoTemperatureFLD::Init(Input &input, DataBlock *datain) {
   auto data = this->data;
 
   // Initialize our workspace arrays
-  this->nu = IdefixArray3D<real> ("RadiationDiffusivity", data->np_tot[KDIR],
-                                                          data->np_tot[JDIR],
-                                                          data->np_tot[IDIR]);
-
   this->radX = IdefixArray4D<real> ("RadiationX", num_species,
                                                   data->np_tot[KDIR],
                                                   data->np_tot[JDIR],
@@ -996,13 +1134,12 @@ void TwoTemperatureFLD::Init(Input &input, DataBlock *datain) {
  // Fill arrays with 0
   auto   nu = this->nu;
   auto radX = this->radX;
-  auto radY = this->radX;
+  auto radY = this->radY;
   int num_species = this->num_species;
   bool havePreconditioner = this->havePreconditioner;
 
   idefix_for("InitRadiationArrays",0,data->np_tot[KDIR],0,data->np_tot[JDIR],0, data->np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i) {
-      nu  (k,j,i) = ZERO_F;
       for (int s=0; s < num_species; s++) {
         radX(s,k,j,i) = ZERO_F;
         radY(s,k,j,i) = ZERO_F;
@@ -1120,12 +1257,12 @@ void TwoTemperatureFLD::FillUtils() {
       idefix_for("rho_kappa", kbeg, kend, jbeg, jend, ibeg, iend,
         KOKKOS_LAMBDA (int k, int j, int i) {
           if (s == 0) {
-            _kappaR(0,k,j,i) = _kappaR(s,k,j,i) * Vc(RHO,k,j,i);
-            _kappaP(0,k,j,i) = _kappaP(s,k,j,i) * Vc(RHO,k,j,i);
+            _kappaR(0,k,j,i) = _kappaR(s,k,j,i) * Vc(RHO,k,j,i) / u_opac;
+            _kappaP(0,k,j,i) = _kappaP(s,k,j,i) * Vc(RHO,k,j,i) / u_opac;
           }
           else {
-           _kappaR(0,k,j,i) += _kappaR(s,k,j,i) * Vc(RHO,k,j,i);
-           _kappaP(0,k,j,i) += _kappaP(s,k,j,i) * Vc(RHO,k,j,i);
+           _kappaR(0,k,j,i) += _kappaR(s,k,j,i) * Vc(RHO,k,j,i) / u_opac;
+           _kappaP(0,k,j,i) += _kappaP(s,k,j,i) * Vc(RHO,k,j,i) / u_opac;
           }
         }) ;
   }
@@ -1147,10 +1284,10 @@ void TwoTemperatureFLD::FillUtils() {
         real tmp = mu * prs / rho;
 
         if (s == 0) {
-          nu(k,j,i)  = _lambda(k,j,i) * code_c / (_kappaR(0,k,j,i) / u_opac);
+          nu(k,j,i)  = _lambda(k,j,i) * code_c / _kappaR(0,k,j,i);
           rhs(k,j,i) = Erad(k,j,i);
         
-          radY(0,k,j,i) = (_kappaP(0,k,j,i)/u_opac) * code_c * dt;
+          radY(0,k,j,i) = _kappaP(0,k,j,i) * code_c * dt;
           radX(0,k,j,i) = code_aR * pow(tmp,3) * radY(0,k,j,i) / (rho*cV);
           rhs(k,j,i)  += code_aR * pow(tmp, 4) * radY(0,k,j,i) / (1 + 4*radX(0,k,j,i));
         }
@@ -1164,8 +1301,8 @@ void TwoTemperatureFLD::FillUtils() {
   idfx::popRegion();
 }
 
-void TwoTemperatureFLD::FillMatrix() {
-  idfx::pushRegion("FLD::FillMatrix");
+void TwoTemperatureFLD::FillMatrixCouplingTerms() {
+  idfx::pushRegion("FLD::FillMatrixCouplingTerms");
 
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR]; iend = data->end[IDIR];
@@ -1182,206 +1319,92 @@ void TwoTemperatureFLD::FillMatrix() {
   )
 
   IdefixArray4D<real> M    = FLD_matrix->M;
-  IdefixArray3D<real> rhs  = this->rhs;
-  IdefixArray3D<real> P    = this->precond;
-  IdefixArray3D<real> Erad = this->Erad;
   IdefixArray4D<real> radY = this->radY;
   IdefixArray4D<real> radX = this->radX;
-  IdefixArray3D<real> nu   = this->nu;
-  IdefixArray3D<real> dV = data->dV;
-  
-  const real dt = this->dt ;
 
-  bool havePreconditioner = this->havePreconditioner;
-
-  D_EXPAND( // dimensions = 0, 1, 2
-    IdefixArray1D<real> x1  = data->x[IDIR];
-    IdefixArray1D<real> x1l = data->xl[IDIR];
-    IdefixArray1D<real> x1r = data->xr[IDIR];
-    IdefixArray1D<real> dx1 = data->dx[IDIR];
-    IdefixArray3D<real> Ax1 = data->A[IDIR];
-  ,
-    IdefixArray1D<real> x2  = data->x[JDIR];
-    IdefixArray1D<real> x2l = data->xl[JDIR];
-    IdefixArray1D<real> x2r = data->xr[JDIR];
-    IdefixArray1D<real> dx2 = data->dx[JDIR];
-    IdefixArray3D<real> Ax2 = data->A[JDIR];
-  ,
-    IdefixArray1D<real> x3  = data->x[KDIR];
-    IdefixArray1D<real> x3l = data->xl[KDIR];
-    IdefixArray1D<real> x3r = data->xr[KDIR];
-    IdefixArray1D<real> dx3 = data->dx[KDIR];
-    IdefixArray3D<real> Ax3 = data->A[KDIR];
-    #if GEOMETRY == SPHERICAL
-    IdefixArray1D<real> sinth = data->sinx2;
-    #endif
-  )
-
-  real lvalue[3], rvalue[3] ;
-  FLDMatrix::RadiationBoundaryType lbound[3], rbound[3] ; 
-
-  for (int dir = 0; dir < DIMENSIONS; dir++) {
-    lbound[dir] = this->lbound[dir] ;
-    rbound[dir] = this->rbound[dir] ;
-    lvalue[dir] = this->lvalue[dir] ;
-    rvalue[dir] = this->rvalue[dir] ;
-  }
-
-  int num_species = this->num_species;
 
   idefix_for("FiniteDifference", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
-      
-      D_EXPAND( real h1;, real h2;, real h3;) 
-      #if GEOMETRY == CARTESIAN
-      D_EXPAND(h1 = 1.;, h2 = 1.;, h3 = 1.;)
-      #elif GEOMETRY == POLAR
-      D_EXPAND(h1 = 1.;, h2 = x1(i);, h3 = 1.;)
-      #else
-      D_EXPAND(h1 = 1.;, h2 = x1(i);, h3 = x1(i) * sinth(j);)
-      #endif
-
-      // diffusion coefficients and matrix elements
+      // Coupling coefficients and matrix elements
       M(0,k,j,i) = 1 + radY(0,k,j,i) / (1 + 4*radX(0,k,j,i));
-
-#ifndef SECOND_ORDER_FLUXES
-      D_EXPAND(
-        const real nu1m = lageval1(x1(i-1), x1(i), nu(k,j,i-1), nu(k,j,i  ), x1l(i));
-        const real nu1p = lageval1(x1(i), x1(i+1), nu(k,j,i  ), nu(k,j,i+1), x1r(i));
-        M(1,k,j,i) = -dt * 2./h1 * nu1m * Ax1(k,j,i)   / (dx1(i) + dx1(i-1)) / dV(k,j,i);
-        M(2,k,j,i) = -dt * 2./h1 * nu1p * Ax1(k,j,i+1) / (dx1(i) + dx1(i+1)) / dV(k,j,i);
-        M(0,k,j,i) -= M(1,k,j,i) + M(2,k,j,i);
-      ,
-        const real nu2m = lageval1(x2(j-1), x2(j), nu(k,j-1,i), nu(k,j  ,i), x2l(j));
-        const real nu2p = lageval1(x2(j), x2(j+1), nu(k,j  ,i), nu(k,j+1,i), x2r(j));
-        M(3,k,j,i) = -dt * 2./h2 * nu2m * Ax2(k,j,i)   / (dx2(j) + dx2(j-1)) / dV(k,j,i);
-        M(4,k,j,i) = -dt * 2./h2 * nu2p * Ax2(k,j+1,i) / (dx2(j) + dx2(j+1)) / dV(k,j,i);
-        M(0,k,j,i) -= M(3,k,j,i) + M(4,k,j,i);
-      ,
-        const real nu3m = lageval1(x3(k-1), x3(k), nu(k-1,j,i), nu(k  ,j,i), x3l(k));
-        const real nu3p = lageval1(x3(k), x3(k+1), nu(k  ,j,i), nu(k+1,j,i), x3r(k));
-        M(5,k,j,i) = -dt * 2./h3 * nu3m * Ax3(k,j,i)   / (dx3(k) + dx3(k-1)) / dV(k,j,i);
-        M(6,k,j,i) = -dt * 2./h3 * nu3p * Ax3(k+1,j,i) / (dx3(k) + dx3(k+1)) / dV(k,j,i);
-        M(0,k,j,i) -= M(5,k,j,i) + M(6,k,j,i);
-      )
-#else 
-D_EXPAND(
-        M(1,k,j,i) = -dt * 2./h1 * 1/(dx1(i)/nu(k,j,i) + dx1(i-1)/nu(k,j,i-1)) * Ax1(k,j,i) / dV(k,j,i);
-        M(2,k,j,i) = -dt * 2./h1 * 1/(dx1(i)/nu(k,j,i) + dx1(i+1)/nu(k,j,i+1)) * Ax1(k,j,i+1) / dV(k,j,i);
-        M(0,k,j,i) -= M(1,k,j,i) + M(2,k,j,i);
-      ,
-        M(3,k,j,i) = -dt * 2./h2 * 1/(dx2(j)/nu(k,j,i) + dx2(j-1)/nu(k,j-1,i)) * Ax2(k,j,i) / dV(k,j,i);
-        M(4,k,j,i) = -dt * 2./h2 * 1/(dx2(j)/nu(k,j,i) + dx2(j+1)/nu(k,j+1,i)) * Ax2(k,j+1,i) / dV(k,j,i);
-        M(0,k,j,i) -= M(3,k,j,i) + M(4,k,j,i);
-      ,
-        M(5,k,j,i) = -dt * 2./h3 * 1/(dx3(k)/nu(k,j,i) + dx3(k-1)/nu(k-1,j,i)) * Ax3(k,j,i) / dV(k,j,i);
-        M(6,k,j,i) = -dt * 2./h3 * 1/(dx3(k)/nu(k,j,i) + dx3(k+1)/nu(k+1,j,i)) * Ax3(k+1,j,i) / dV(k,j,i);
-        M(0,k,j,i) -= M(5,k,j,i) + M(6,k,j,i);
-      )
-#endif
-
-      // now handle boundary conditions
-      real delta ;
-      D_EXPAND(
-        if (i == ibeg+pad) {
-          switch(lbound[0]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx1(i-1)*nu(k,j,i) / (dx1(i)*nu(k,j,i-1)) ;
-              M(0,k,j,i) -= M(1,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k,j,i-1) * M(1,k,j,i) * (1 + delta);
-              M(1,k,j,i) = 0;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              M(0,k,j,i) += M(1,k,j,i);
-              real dx_nu = 0.5*dx1(i-1) / nu(k,j,i-1) + 0.5*dx1(i) / nu(k,j,i);
-              rhs(k,j,i) += lvalue[0] * M(1,k,j,i) * dx_nu;
-              M(1,k,j,i) = 0;
-              break ;
-          }
-        } else if (i == iend-1-pad) {
-          switch(rbound[0]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx1(i+1)*nu(k,j,i) / (dx1(i)*nu(k,j,i+1)) ;
-              M(0,k,j,i) -= M(2,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k,j,i+1) * M(2,k,j,i) * (1 + delta) ;
-              M(2,k,j,i) = 0;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              M(0,k,j,i) += M(2,k,j,i);
-              real dx_nu = 0.5*dx1(i+1) / nu(k,j,i+1) + 0.5*dx1(i) / nu(k,j,i);
-              rhs(k,j,i) += rvalue[0] * M(2,k,j,i) * dx_nu;
-              M(2,k,j,i) = 0;
-              break ;
-          } 
-        }
-        ,
-         if (j == jbeg+pad) {
-          switch(lbound[1]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx2(j-1)*nu(k,j,i) / (dx2(j)*nu(k,j-1,i)) ;
-              M(0,k,j,i) -= M(3,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k,j-1,i) * M(3,k,j,i) * (1 + delta) ;
-              M(3,k,j,i) = 0;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              M(0,k,j,i) += M(3,k,j,i);
-              const real dx_nu = 0.5*dx2(j-1) / nu(k,j-1,i) + 0.5*dx2(j) / nu(k,j,i);
-              rhs(k,j,i) += lvalue[1] * M(3,k,j,i) * dx_nu;
-              M(3,k,j,i) = 0;
-              break ;
-          }
-        } else if (j == jend-1-pad) {
-          switch(rbound[1]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx2(j+1)*nu(k,j,i) / (dx2(j)*nu(k,j+1,i)) ;
-              M(0,k,j,i) -= M(4,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k,j+1,i) * M(4,k,j,i) * (1 + delta) ;
-              M(4,k,j,i) = 0;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              M(0,k,j,i) += M(4,k,j,i);
-              const real dx_nu = 0.5*dx2(j+1) / nu(k,j+1,i) + 0.5*dx1(j) / nu(k,j,i);
-              rhs(k,j,i) += rvalue[1] * M(4,k,j,i) * dx_nu;
-              M(4,k,j,i) = 0;
-              break ;
-          } 
-        }
-        ,
-        if (k == kbeg+pad) {
-          switch(lbound[2]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx3(k-1)*nu(k,j,i) / (dx3(k)*nu(k-1,j,i)) ;
-              M(0,k,j,i) -= M(5,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k-1,j,i) * M(5,k,j,i) * (1 + delta) ;
-              M(5,k,j,i) = 0 ;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              const real dx_nu = 0.5*dx3(k-1) / nu(k-1,j,i) + 0.5*dx3(k) / nu(k,j,i);
-              rhs(k,j,i) += lvalue[2] * M(5,k,j,i) * dx_nu;
-              M(0,k,j,i) += M(5,k,j,i);
-              M(5,k,j,i) = 0 ;
-              break ;
-          }
-        } else if (k == kend-1-pad) {
-          switch(rbound[2]) {
-            case FLDMatrix::RadiationBoundaryType::dirichlet:
-              delta = dx3(k+1)*nu(k,j,i) / (dx3(k)*nu(k+1,j,i)) ;
-              M(0,k,j,i) -= M(6,k,j,i) * delta ;
-              rhs(k,j,i) -= Erad(k+1,j,i) * M(6,k,j,i) * (1+delta) ;
-              M(6,k,j,i) = 0;
-              break ;
-            case FLDMatrix::RadiationBoundaryType::neumann:
-              M(0,k,j,i) += M(6,k,j,i);
-              const real dx_nu = 0.5*dx2(k+1) / nu(k+1,j,i) + 0.5*dx3(k) / nu(k,j,i);
-              rhs(k,j,i) += rvalue[2] * M(6,k,j,i) * dx_nu;
-              M(6,k,j,i) = 0;
-          break ;
-          } 
-        }
-      )
-
-      if (havePreconditioner) P(k,j,i) = sqrt(fabs(M(0,k,j,i)));
     });
   
   idfx::popRegion();
+}
+
+// done
+void FluxLimitedDiffusion::ShowConfig() {
+  idfx::cout << "FLD: Using ";
+  switch(solver) {
+    case BICGSTAB:
+      idfx::cout << "unpreconditioned BICGSTAB";
+      break;
+    case PBICGSTAB:
+      idfx::cout << "preconditioned BICGSTAB";
+      break;
+    case PCG:
+      idfx::cout << "preconditioned CG";
+      break;
+    case CG:
+      idfx::cout << "unpreconditioned CG";
+      break;
+    case MINRES:
+      idfx::cout << "unpreconditioned MinRes";
+      break;
+    case PMINRES:
+      idfx::cout << "preconditioned MinRes";
+      break;
+    default:
+      IDEFIX_ERROR("FLD:: Unknown solver");
+  }
+  idfx::cout << " solver." << std::endl;
+
+  idfx::cout << "FLD: Flux limiter is ";
+  switch(fluxLimiterType) {
+    case one_third:
+      idfx::cout << "1/3";
+      break;
+    case Kley1989:
+      idfx::cout << "Kley 1989";
+      break;
+    case Minerbo1978:
+      idfx::cout << "Minerbo 1978";
+      break;
+    case LevermorePomraning1981:
+      idfx::cout << "Levermore-Pomraning 1981";
+      break;
+    case userdeffluxlimiter:
+      idfx::cout << "user defined";
+      break;
+    default:
+      IDEFIX_ERROR("FLD:: Unknown flux limiter");
+  }
+  idfx::cout << "." << std::endl;
+
+  idfx::cout << "FLD: Opacity is ";
+  switch(opacityType) {
+    case constantkappa:
+      idfx::cout << "constant";
+      break;
+    case userdefkappa:
+      idfx::cout << "user defined";
+      break;
+    default:
+      IDEFIX_ERROR("FLD:: Unknown opacity");
+  }
+  idfx::cout << "." << std::endl;
+
+  // idfx::cout << "FLD: target L2 norm error=" << targetError << "." << std::endl;
+
+  // The setup is periodic if it passes the previous boundary loading
+  if(this->isPeriodic == true) {
+    idfx::cout << "FLD: Setup is periodic, doing nothing." << std::endl;
+  }
+
+  iterativeSolver->ShowConfig();
+}
+
+void TwoTemperatureFLD::ShowConfig() {
+  idfx::cout << "RT: TwoTemperatureFLD with " << num_species << " species.\n";
+  FluxLimitedDiffusion::ShowConfig()  ;
 }

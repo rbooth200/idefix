@@ -12,6 +12,8 @@
 #include "vector.hpp"
 #include "iterativesolver.hpp"
 
+//#define DEBUG_BICGSTAB
+
 // The bicgstab derives from the iterativesolver class
 template <class T>
 class Bicgstab : public IterativeSolver<T> {
@@ -83,6 +85,9 @@ int Bicgstab<T>::Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs) {
 
   int n = 0;
   while(this->convStatus != true && n < this->maxiter) {
+  #ifdef DEBUG_BICGSTAB
+    std::cout << "iter= "<< n << " ; ";
+  #endif
     this->PerformIter();
     if(this->restart) {
       this->restart=false;
@@ -225,7 +230,11 @@ void Bicgstab<T>::PerformIter() {
   Kokkos::deep_copy(s, res); // s is momentarily oldRes to recycle arrays
 
   // Update residual
-  this->SetRes();
+  //this->SetRes();
+  idefix_for("UpdateRes", kbeg, kend, jbeg, jend, ibeg, iend,
+    KOKKOS_LAMBDA (int k, int j, int i) {
+      res(k,j,i) = res(k,j,i) - alpha * v(k,j,i);
+    });
 
   // Test intermediate guess h_i
   this->TestErrorL2();
@@ -253,7 +262,7 @@ void Bicgstab<T>::PerformIter() {
     #endif
 
     // Checking Nans
-    if(std::isnan(omega)) {
+    if(std::isnan(omega) || std::isinf(omega)) {
       idfx::cout << "Bicgstab:: omega is nan in step 10." << std::endl;
       // IDEFIX_ERROR("omega is nan in step 10");
       this->restart = true;
@@ -272,17 +281,22 @@ void Bicgstab<T>::PerformIter() {
 
     // *********** Step 12.
     // Update residual
-    this->SetRes();
+    //this->SetRes();
+    idefix_for("UpdateRes2", kbeg, kend, jbeg, jend, ibeg, iend,
+      KOKKOS_LAMBDA (int k, int j, int i) {
+        res(k,j,i) = res(k,j,i) - omega * t(k,j,i);
+    });
+
 
     // Test final guess x_i
     this->TestErrorL2();
 
     // Last task if no convergence : update res
     if(this->convStatus == false) {
-      idefix_for("UpdateRes", kbeg, kend, jbeg, jend, ibeg, iend,
-        KOKKOS_LAMBDA (int k, int j, int i) {
-          res(k,j,i) = s(k,j,i) - omega * t(k,j,i);
-        });
+      //idefix_for("UpdateRes", kbeg, kend, jbeg, jend, ibeg, iend,
+      //  KOKKOS_LAMBDA (int k, int j, int i) {
+      //    res(k,j,i) = s(k,j,i) - omega * t(k,j,i);
+      //  });
 
       // Saving rho and omega for next iteration
       rhoOld = rho;

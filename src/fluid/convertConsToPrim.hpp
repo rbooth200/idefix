@@ -132,7 +132,6 @@ void Fluid<Phys>::ConvertConsToPrim() {
       for(int nv = 0 ; nv < Phys::nvar; nv++) {
         U[nv] = Uc(nv,k,j,i);
       }
-
       K_ConsToPrim<Phys>(V,U,&eos);
 
 #pragma unroll

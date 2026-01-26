@@ -146,7 +146,17 @@ DataBlock::DataBlock(Grid &grid, Input &input) {
 
   // Initialise radiation if needed
   if(input.CheckBlock("Radiation")) {
-    this->radiation = std::make_unique<TwoTemperatureFLD>(input, this);
+    bool multi_species = false ;
+    if (input.CheckBlock("Dust")) {
+      if (input.Get<int>("Dust","nSpecies",0) > 0) {
+        if(input.GetOrSet<bool>("Dust","have_energy",0, false)){
+          multi_species = true;
+    }}}
+    if (multi_species) {
+      this->radiation = std::make_unique<MultiSpeciesFLD>(input, this);
+    } else {
+      this->radiation = std::make_unique<TwoTemperatureFLD>(input, this);
+    }
     this->haveRadiation = true;
   }
 

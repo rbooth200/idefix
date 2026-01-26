@@ -37,8 +37,8 @@ class GammaDrag {
       // Assume a fixed size, hence for both Epstein or Stokes, gamma~1/rho_g/cs
       // Get the sound speed
       #if HAVE_ENERGY == 1
-        cs = std::sqrt(eos.GetGamma(VcGas(PRS,k,j,i),VcGas(RHO,k,j,i)
-                        *VcGas(PRS,k,j,i)/VcGas(RHO,k,j,i)));
+        cs = std::sqrt(eos.GetGamma(VcGas(PRS,k,j,i),VcGas(RHO,k,j,i))
+                        *VcGas(PRS,k,j,i)/VcGas(RHO,k,j,i));
       #else
         cs = eos.GetWaveSpeed(k,j,i);
       #endif
@@ -87,6 +87,10 @@ class Drag {
 
   GammaDrag gammaDrag;  // The drag law
 
+  real cV;              // Heat capacity;
+  real alpha_coll;      // Collisional heat efficiency (thermal accommodation coefficient)
+  bool have_energy;     // Store whether we have energy equation.
+
  private:
   DataBlock* data;
   bool feedback{false};
@@ -130,6 +134,23 @@ Drag::Drag(Input &input, Fluid<Phys> *hydroin):
                                   data->np_tot[KDIR],
                                   data->np_tot[JDIR],
                                   data->np_tot[IDIR]);
+    }
+
+    // Check whether the dust has a temperature. If so, store the heat capacity and thermal
+    // accommodation coefficient
+    if (input.GetOrSet<bool>(blockName,"have_energy",0, false)){
+      this->have_energy = true ;
+      this->cV = input.Get<real>(blockName,"cV",0);
+      this->alpha_coll = input.Get<real>(blockName,"alpha_coll",0);
+
+      if(input.GetOrSet<int>("Dust","tracer",0,0)==0) {
+        IDEFIX_ERROR("At least one dust tracer is needed to store the temperature when "
+                     "the dust fluid has energy");
+      }
+    } else {
+      this->have_energy = false ;
+      this->cV = -1 ;
+      this->alpha_coll = 0;
     }
 
   } else {
