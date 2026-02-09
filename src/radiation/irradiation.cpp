@@ -62,7 +62,6 @@ Irradiation::Irradiation(Input& input, DataBlock* datain) {
       msg << "Irradiation:: Opacity (kappa) type must be 'constant' or 'userconst" << opac;
       IDEFIX_ERROR(msg);  
     }
-    idfx::cout << (opacityType == OpacityType::userconst) << "\n";
   } else {
     std::stringstream msg;
     msg << "Irradiation:: Opacity (kappa) must be specified.";
@@ -121,7 +120,7 @@ void Irradiation::EnrollUserRadiationField(UserRadiationFunc func) {
 
 
 void Irradiation::UpdatePressure() {
-  idfx::pushRegion("Irradiation::UpdatePressure");
+ idfx::RegionWrapper region("Irradiation::UpdatePressure");
 
   IdefixArray4D<real> heating = this->irradiationHeating;
   const real dt =  data->dt;
@@ -134,7 +133,7 @@ void Irradiation::UpdatePressure() {
                                 data->beg[JDIR], data->end[JDIR],
                                 data->beg[IDIR], data->end[IDIR],
       KOKKOS_LAMBDA (int k, int j, int i) {
-        Vc(PRS,k,j,i) += heating(0, k,j,i) * dt * (gamma-1); 
+        Vc(PRS,k,j,i) += heating(0, k,j,i) * Vc(RHO,k,j,i) * dt * (gamma-1); 
     });
   }
 
@@ -155,7 +154,7 @@ void Irradiation::UpdatePressure() {
   }
   data->SetBoundaries();
 
-  idfx::popRegion();
+  
 }
 
 LongCharIrradiation::LongCharIrradiation(Input&input, DataBlock* datain)
@@ -230,7 +229,7 @@ LongCharIrradiation::~LongCharIrradiation() {
 }
 
 void LongCharIrradiation::ComputeIrradiation() {
-  idfx::pushRegion("Irradiation::ComputeIrradiation");
+ idfx::RegionWrapper region("Irradiation::ComputeIrradiation");
 
   if (haveUserOpacity)
     user_opacity(data, kappa);
@@ -311,6 +310,8 @@ void LongCharIrradiation::ComputeIrradiation() {
       real solid_angle = 1 / (4 * M_PI * xl(i) * xl(i));
       real norm = (1 / u_lum) * solid_angle * A(k,j,i) / dV(k,j,i);
 
+      real dl = dV(k,j,i) / (0.5*(A(k,j,i)+A(k,j,i+1)));
+
       for (int l=0; l < num_bands; l++) {
 
         real tau = 0, dtau=1e-300;
@@ -323,7 +324,7 @@ void LongCharIrradiation::ComputeIrradiation() {
         
         for (int s=0; s < num_spec; s++) {
           if (l == 0) heating(s,k,j,i) = 0;
-          heating(s,k,j,i) += heat_l * (dcol(s,k,j,i)*kappa(s,l) / dtau);
+          heating(s,k,j,i) += heat_l * (dl*kappa(s,l) / dtau);
         }
       }  
   });

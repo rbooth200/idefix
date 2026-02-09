@@ -6,5 +6,3 @@ target_sources(idefix
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/opacity.cpp
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/potential.hpp
 )
-
-replace_idefix_source(timeIntegrator.cpp timeIntegrator.cpp)

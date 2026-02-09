@@ -60,7 +60,7 @@ void Setup::InitFlow(DataBlock &data) {
 
                     d.dustVc[0](RHO,k,j,i) = rho;
                     d.dustVc[0](VX1,k,j,i) = vd;
-                    d.dustVc[0](TRD,k,j,i) = rho * Td;
+                    d.dustVc[0](TRD,k,j,i) = Td;
                 }
                 d.Erad(k,j,i) = aR * pow(T, 4)*(1 + amp*(dEr[0]*c - dEr[1]*s));
             }
@@ -86,6 +86,6 @@ void MakeAnalysis(DataBlock & data) {
   f << std::setprecision(12);
   f << data.t << " " 
     << d.Vc(RHO,k,j,i) << " " << d.Vc(VX1,k,j,i) << " " << mu * d.Vc(PRS,k,j,i) / d.Vc(RHO,k,j,i) << " "
-    << d.dustVc[0](RHO,k,j,i) << " " << d.dustVc[0](VX1,k,j,i) << " " << d.dustVc[0](TRD,k,j,i) / d.dustVc[0](RHO,k,j,i) << " "
+    << d.dustVc[0](RHO,k,j,i) << " " << d.dustVc[0](VX1,k,j,i) << " " << d.dustVc[0](TRD,k,j,i) << " "
     << d.Erad(k,j,i) << "\n";
 }

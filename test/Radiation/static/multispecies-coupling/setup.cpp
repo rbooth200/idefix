@@ -29,7 +29,7 @@ void WriteState(DataBlock& data, const real t, const real dt) {
   f << t << " " 
     << d.Vc(RHO,k,j,i) << " " << d.dustVc[0](RHO,k,j,i) << " "
     << mu * d.Vc(PRS,k,j,i) / d.Vc(RHO,k,j,i) << " "
-    << d.dustVc[0](TRD,k,j,i) / d.dustVc[0](RHO,k,j,i) << " "
+    << d.dustVc[0](TRD,k,j,i) << " "
     << pow(d.Erad(k,j,i)/ aR, 0.25) << "\n" ;
      
 }
@@ -92,7 +92,7 @@ void Setup::InitFlow(DataBlock &data) {
                 for (int s=0; s < nDust; s++) {
                     d.dustVc[s](RHO,k,j,i) = rho;
                     d.dustVc[s](VX1,k,j,i) = 0.0;
-                    d.dustVc[s](TRD, k,j,i) = rho * Td ;
+                    d.dustVc[s](TRD, k,j,i) = Td ;
                 }
             }
         }

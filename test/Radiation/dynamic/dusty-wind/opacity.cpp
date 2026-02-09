@@ -58,12 +58,18 @@ void DustOpacity::evaluate_opacity(int num_wle_bins, IdefixArray1D<real> wle_mic
 
 void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, IdefixArray4D<real> kR, int spec) {
 
-  int kbeg = data->beg[KDIR]-2;
-  int kend = data->end[KDIR]+2;
-  int jbeg = data->beg[JDIR]-2;
-  int jend = data->end[JDIR]+2;
-  int ibeg = data->beg[IDIR]-2;
-  int iend = data->end[IDIR]+2;
+  int kbeg = data->beg[KDIR];
+  int kend = data->end[KDIR];
+  int jbeg = data->beg[JDIR];
+  int jend = data->end[JDIR];
+  int ibeg = data->beg[IDIR];
+  int iend = data->end[IDIR];
+
+  EXPAND(
+    ibeg -= 2; iend += 2;,
+    jbeg -= 2; jend += 2;,
+    kbeg -= 2; kend += 2;
+  )
 
   real u_Kelvin = idfx::units.GetKelvin();
 
@@ -81,11 +87,11 @@ void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP,
   idefix_for("FillKappaDust", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
       real kappa;
-      real T ; 
+      real T;
       if (spec == 0)
         T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
       else
-        T = Vc(TRD,k,j,i) * u_Kelvin ;
+        T = Vc(TRD, k, j, i) * u_Kelvin;
 
       if (beta == 1)
         kappa = T / sqrt(T0*T0 + T*T);
@@ -126,6 +132,8 @@ GasOpacity::GasOpacity() {
 
 void GasOpacity::evaluate_opacity(IdefixArray2D<real> kappa) {
 
+  IdefixArray1D<real> kappa_2000 = this->kappa_2000 ;
+
   idefix_for("KappaStarGas", 0, num_wle_bins,
     KOKKOS_LAMBDA (int i) {
       kappa(0, i) = kappa_2000(i);
@@ -145,13 +153,18 @@ void GasOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, 
                                                  data->np_tot[IDIR]);
   }
 
-  int kbeg = data->beg[KDIR]-2;
-  int kend = data->end[KDIR]+2;
-  int jbeg = data->beg[JDIR]-2;
-  int jend = data->end[JDIR]+2;
-  int ibeg = data->beg[IDIR]-2;
-  int iend = data->end[IDIR]+2;
+  int kbeg = data->beg[KDIR];
+  int kend = data->end[KDIR];
+  int jbeg = data->beg[JDIR];
+  int jend = data->end[JDIR];
+  int ibeg = data->beg[IDIR];
+  int iend = data->end[IDIR];
 
+  EXPAND(
+    ibeg -= 2; iend += 2;,
+    jbeg -= 2; jend += 2;,
+    kbeg -= 2; kend += 2;
+  )
 
   real u_Kelvin = idfx::units.GetKelvin();
 
@@ -167,27 +180,33 @@ void GasOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, 
   IdefixArray3D<real> kP_old = this->_kP_old;
   IdefixArray3D<real> kR_old = this->_kR_old;
 
-  idefix_for("FillKappaDust", kbeg, kend, jbeg, jend, ibeg, iend,
+  idefix_for("FillKappaGas", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
       real T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
       real logT = log(T);
       
       // Get array index: 
+      double f = (num_pl - 1) * ((logT - logT0) / (logT1 - logT0));
+      if (f != f) f = -1; // NaN check
+      
       double logKP, logKR;
-      if (logT <= logT0) {
+      if (f <  0) {
         logKP = logKpl(0);
         logKR = logKRoss(0);
       }
-      else if (logT >= logT1) {
+      else if (f >= num_pl - 1) {
         logKP = logKpl(num_pl - 1);
         logKR = logKRoss(num_pl - 1);
       }
       else {
-        double f = (num_pl - 1) * ((logT - logT0) / (logT1 - logT0));
-        int i = static_cast<int>(f);
-        f -= i;
-        logKP = logKpl(i) * (1 - f) + f * logKpl(i + 1);
-        logKR = logKRoss(i) * (1 - f) + f * logKRoss(i + 1);
+        int idx = static_cast<int>(f);
+        f -= idx;
+
+        if (idx < 0 || idx >= num_pl - 1)
+          idfx::cout << idx << " " << f << logT << "\n";
+
+        logKP = logKpl(idx) * (1 - f) + f * logKpl(idx + 1);
+        logKR = logKRoss(idx) * (1 - f) + f * logKRoss(idx + 1);
       }
 
       // Average with opacity for stability
@@ -203,7 +222,7 @@ void GasOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, 
       kR_old(k,j,i) = logKR;
     });
 
-  have_old_opac = true;
+    have_old_opac = true;
 }
 
 // Opacity tables

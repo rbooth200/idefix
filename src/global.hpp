@@ -35,6 +35,16 @@ extern Units units;               //< Units for the run
 void pushRegion(const std::string&);
 void popRegion();
 
+class RegionWrapper {
+ public:
+  RegionWrapper(const std::string& name) {
+    pushRegion(name);
+  }
+  ~RegionWrapper() {
+    popRegion();
+  }
+};
+
 template<typename T>
 IdefixArray1D<T> ConvertVectorToIdefixArray(std::vector<T> &inputVector) {
   IdefixArray1D<T> outArr = IdefixArray1D<T>("Vector",inputVector.size());

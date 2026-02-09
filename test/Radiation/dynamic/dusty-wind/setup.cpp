@@ -16,9 +16,10 @@ void Analysis(DataBlock & data);
 
 static bool surface_condensation = true;
 
-static real rho0, p, T0, d2g, C_surf;
+static real R_Hill, R_Bondi, R_p;
+static real T0, d2g, C_surf;
 static IdefixArray2D<real> T_surf, F_surf;
-std::string surf_file;
+std::string surf_base;
 std::array<int, 3> n;
 
 // Setup the condensation parameters
@@ -37,9 +38,9 @@ void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<
                                  0, data.np_tot[JDIR],
                                  0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i) {
-      real xpos = x(i) * cos(y(j)) - tidal_potential.get_semi_major();
-      real ypos = x(i) * sin(y(j)) * sin(z(k));
-      real zpos = x(i) * sin(y(j)) * cos(z(k));
+      real xpos = x(i) * cos(y(j));
+      real ypos = x(i) * sin(y(j)) ;// * sin(z(k));
+      real zpos = 0; //x(i) * sin(y(j)) * cos(z(k));
 
       phiP(k,j,i) = tidal_potential(xpos, ypos, zpos);
   });
@@ -52,14 +53,17 @@ void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
   IdefixArray4D<real> Vc = hydro->Vc;
   const int ighost = hydro->data->nghost[IDIR];
 
+  real unit_density = idfx::units.GetDensity();
+  real unit_temp = idfx::units.GetKelvin();
+
   if(dir==IDIR && side == BoundarySide::left) {
     hydro->boundary->BoundaryFor("UserDefBoundary", dir, side,
       KOKKOS_LAMBDA (int k, int j, int i) {
           
         const int iref = 2*(ighost) - i - 1;
-        const int sign = Phys::dust? 1 : -1;
+        const int sign = (Phys::dust && (Vc(VX1+dir,k,j,iref) < 0))? 1 : -1;
 
-        for (int n=0; n<Phys::nvar; n++){
+        for (int n=0; n<Phys::nvar; n++) {
           if(n == (VX1+dir)) 
             Vc(n,k,j,i) = sign * Vc(n,k,j,iref);
           else
@@ -71,6 +75,41 @@ void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
     IDEFIX_ERROR("UserBoundary not implemented for this side/dir");
   }
 }
+
+
+template<typename Phys, int sign=1>
+void ZeroFluxBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
+
+  IdefixArray4D<real> Flux = hydro->FluxRiemann;
+  IdefixArray4D<real> Vc = hydro->Vc;
+
+  DataBlock* data = hydro->data;
+
+
+  if(dir==IDIR && side == BoundarySide::left) {
+    int i = data->beg[IDIR];  
+    auto th = data->x[JDIR];
+    IdefixArray3D<real> A = data->A[dir];
+  
+    idefix_for("UserFluxBoundary", 0, data->np_tot[KDIR],
+                                   0, data->np_tot[JDIR],
+      KOKKOS_LAMBDA (int k, int j) {
+
+        real P = Phys::dust ? 0.0 : Vc(PRS,k,j,i);
+          
+        if (sign*Flux(RHO, k,j,i) <= ZERO_F) {
+          for (int n=0; n<Phys::nvar; n++){
+              Flux(n,k,j,i) = 0;
+              if (n == VX1+dir)
+                Flux(n,k,j,i) = A(k,j,i) * P;
+          }
+        }
+
+      });
+    }
+}
+
+
 
 void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
@@ -89,8 +128,8 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
   idefix_for("ApplyCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR], 0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i)  {
-      real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu * u_temp;
-      real T_d = Dust(TRD,k,j,i) * u_temp;
+      real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu;
+      real T_d = Dust(TRD,k,j,i);
       
       // Save total density and momentum
       real rho_t = Gas(RHO, k,j,i) + Dust(RHO, k,j,i);
@@ -102,7 +141,7 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
       );
 
       // Equilibrium vapour density
-      real rho_v = silicate.rho_vap(T_d) * sqrt(T_g/T_d) / u_den;
+      real rho_v = silicate.rho_vap(T_d*u_temp) * sqrt(T_g/T_d) / u_den;
 
       real K = 0.75 * gammaDrag.GetGamma(k,j,i) * silicate.P_stick * dt;
       real rho_p = rho_t - rho_v;
@@ -120,13 +159,13 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
         rho_d = Dust(RHO, k,j,i) / (1 - x + K*Dust(RHO, k,j,i));
         rho_g = rho_t - rho_d;
       }
-      rho_d = fmax(rho_d, 1e-30*rho_t); // prevent 0
+      rho_d = fmax(rho_d, 1e-100*rho_t); // prevent 0
 
       // Update density/temperature
       Dust(RHO, k,j,i) = rho_d;
       Gas(RHO, k,j,i)  = rho_g; 
 
-      Gas(PRS, k,j,i)  = rho_g * T_g / (mu * u_temp);
+      Gas(PRS, k,j,i)  = rho_g * T_g / mu ;
 
 
       // Update the velocities
@@ -160,13 +199,13 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
     idefix_for("SurfaceCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR],
       KOKKOS_LAMBDA (int k, int j)  {
-        real T_g = Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg) * mu * u_temp;
+        real T_g = Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg) * mu;
         real T_s = T_surf(k, j);
 
         real v_t = k0 * sqrt(Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg));
         
         // Equilibrium vapour density
-        real rho_v = silicate.rho_vap(T_s) * sqrt(T_g/T_s) / u_den;
+        real rho_v = silicate.rho_vap(T_s*u_temp) * sqrt(T_g/T_s) / u_den;
 
         real K = v_t * silicate.P_stick * Ax1(k,j,ibeg) / dV(k,j,ibeg);
         real x = K*dt; 
@@ -177,8 +216,33 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
         // For now let's leave the temperature and velocity at the boundary.
     }); 
   }
-}
 
+  /*
+  int imax[2] = {0,0}, jmax[2] = {0,0}, kmax[2] = {0,0};
+  real max[2] = {0,0};
+  for (int k=0; k < data.np_tot[KDIR]; k++) 
+   for (int j=0; j < data.np_tot[JDIR]; j++) 
+     for (int i=0; i < data.np_tot[IDIR]; i++) {
+
+      real x = fabs(Gas(VX1, k,j,i)) + Gas(PRS, k,j,i)/Gas(RHO, k,j,i);
+      if (x > max[0]) {
+        max[0] = x;
+        imax[0] = i;
+        jmax[0] = j;
+        kmax[0] = k;
+      }
+      x = fabs(Dust(VX1, k,j,i));
+      if (x > max[1]) {
+        max[1] = x;
+        imax[1] = i;
+        jmax[1] = j;
+        kmax[1] = k;
+      }
+     }
+  std::cout << " Max velocities after condensation: Gas " << max[0] << " at (" << imax[0] << "," << jmax[0] << "," << kmax[0] << ")"
+            << " Dust " << max[1] << " at (" << imax[1] << "," << jmax[1] << "," << kmax[1] << ")" <<std::endl;
+  */
+}
 
 void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
 
@@ -263,18 +327,16 @@ void RadiationField(DataBlock* data, IdefixArray1D<real> flux) {
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   
-  real k0 = 30 / data.radiation->unit_opacity;
   // Store parameters
-  rho0 = input.Get<real>("Setup", "tau0", 0) / k0;
-  p = input.Get<real>("Setup", "rhoSlope", 0);
   T0 =  input.Get<real>("Setup", "T0", 0) / idfx::units.GetKelvin();
   d2g =  input.Get<real>("Setup", "d2g", 0);
+  real mu = input.Get<real>("Radiation", "mu", 0) ;
 
   // Total heat capacity of the surface
   C_surf = input.GetOrSet<real>("Setup", "surface_heat_capacity", 0, 3.0) / idfx::units.GetLength();
   surface_condensation = input.GetOrSet<bool>("Setup", "surface_condensation", 0, true);
 
-  surf_file = input.Get<std::string>("Output", "dmp_dir", 0) + "/surface.txt";
+  surf_base = input.Get<std::string>("Output", "dmp_dir", 0) + "/surface_";
 
   real GM = idfx::units.G / (idfx::units.GetLength() * pow(idfx::units.GetVelocity(), 2));
 
@@ -282,8 +344,12 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   real GMstar = GM * input.Get<real>("Setup", "Mstar", 0) * idfx::units.M_sun;
   real GMplanet = GM * input.GetOrSet<real>("Setup", "M_p", 0, 0) * idfx::units.M_earth;
   
-  real R_p = grid.xbeg[0];
-  idfx::cout << "Hill Radius: " << pow(GMplanet/(3*GMstar), 1./3.) * a_p / R_p << " R_p\n";
+  R_p = grid.xbeg[0];
+  R_Hill = pow(GMplanet/(3*GMstar), 1./3.) * a_p ;
+  R_Bondi = GMplanet * mu / T0 ;
+  idfx::cout << "Hill Radius: " << R_Hill / R_p << " R_p\n";
+  idfx::cout << "Bondi Radius: " << R_Bondi / R_p << " R_p\n";
+  idfx::cout << "Sound speed: " << sqrt(T0 / mu) << "\n";
 
   tidal_potential = TidalPotential(GMstar, GMplanet, a_p);
 
@@ -301,6 +367,10 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
   data.hydro->EnrollUserDefBoundary(&UserBoundary<DefaultPhysics>);
   data.dust[0]->EnrollUserDefBoundary(&UserBoundary<DustPhysics>);
+
+  data.hydro->EnrollFluxBoundary(&ZeroFluxBoundary<DefaultPhysics,0>);
+  data.dust[0]->EnrollFluxBoundary(&ZeroFluxBoundary<DustPhysics,-1>);
+
 
   data.gravity->EnrollPotential(&MyPotential);
 
@@ -343,38 +413,34 @@ void Setup::InitFlow(DataBlock &data) {
     Kokkos::deep_copy(T_surf,T_host);
     Kokkos::deep_copy(F_surf,F_host);
 
+    int nDust = d.dustVc.size();
+
+    real rho0 = 1.1 * silicate.rho_vap(T0*idfx::units.GetKelvin()) / idfx::units.GetDensity();
 
     for(int k = 0; k < d.np_tot[KDIR]; k++) {
         for(int j = 0; j < d.np_tot[JDIR]; j++) {
             for(int i = 0; i < d.np_tot[IDIR]; i++) {
 
                 real R = d.x[IDIR](i);
-                real rho = rho0 * pow(R, -p);
+                real rho = rho0 * exp(1.2 * R_Bondi * (1./R - 1./R_p));
 
                 d.Vc(RHO,k,j,i) = rho;
-                d.Vc(VX1,k,j,i) = 0.0;
-                d.Vc(VX2,k,j,i) = 1.0;
-                d.Vc(VX3,k,j,i) = 0.0;
+                EXPAND(
+                  d.Vc(VX1,k,j,i) = 0.0;,
+                  d.Vc(VX2,k,j,i) = 0.0;,
+                  d.Vc(VX3,k,j,i) = 0.0;
+                )
 
                 d.Vc(PRS, k,j,i) = rho * T0 / mu;
                 d.Erad(k,j,i) = aR * pow(T0, 4);        
-            }
-        }
-    }
-
-    int nDust = d.dustVc.size();
-    for(int k = 0; k < d.np_tot[KDIR]; k++) {
-        for(int j = 0; j < d.np_tot[JDIR]; j++) {
-            for(int i = 0; i < d.np_tot[IDIR]; i++) {
-
-                real R = d.x[IDIR](i);
-                real rho = d2g * rho0 * pow(R, -p);
 
                 for (int s=0; s < nDust; s++) {
-                    d.dustVc[s](RHO,k,j,i) = rho;
-                    d.dustVc[s](VX1,k,j,i) = 0.0;
-                    d.dustVc[s](VX2,k,j,i) = 0.0;
-                    d.dustVc[s](VX3,k,j,i) = 0.0;
+                    d.dustVc[s](RHO,k,j,i) = rho * d2g;
+                    EXPAND(
+                      d.dustVc[s](VX1,k,j,i) = 0.0;,
+                      d.dustVc[s](VX2,k,j,i) = 0.0;,
+                      d.dustVc[s](VX3,k,j,i) = 0.0;
+                    );
 
                     d.dustVc[s](TRD, k,j,i) = T0;
                 }
@@ -398,8 +464,11 @@ Setup::~Setup() {
 }
 
 
+static int surf_num = 0;
 void Analysis(DataBlock & data) {
-    std::ofstream f(surf_file);
+    std::stringstream surf_file ;
+    surf_file << surf_base << surf_num++ << ".txt";    
+    std::ofstream f(surf_file.str());
     
     f << "# j k T_surf F_surf" << "\n";
 

@@ -278,6 +278,8 @@ void SphericalShortChar::_build_rays(HostRayInfo& host_rays) {
 }
 
 void SphericalShortChar::_build_ray_weights(){ 
+  idfx::RegionWrapper region("SphericalShortChar::_build_ray_weights") ;
+
 
   int ibeg = data->beg[IDIR];
   int jbeg = data->beg[JDIR];
@@ -332,6 +334,8 @@ void SphericalShortChar::_build_ray_weights(){
 }
 
 int SphericalShortChar::_get_cell_order(int i, int j,HostRayInfo& host_rays) {
+  idfx::RegionWrapper region("SphericalShortChar::_get_cell_order") ;
+
   // Recursively walk the list of rays to the boundary,
   // storing the order of any other cells we discover along
   // the way.
@@ -364,6 +368,7 @@ int SphericalShortChar::_get_cell_order(int i, int j,HostRayInfo& host_rays) {
 }
 
 void SphericalShortChar::_sort_ray_walk(HostRayInfo& host_rays) {
+  idfx::RegionWrapper region("SphericalShortChar::_sort_ray_walk") ;
 
   int ibeg = data->beg[IDIR];
   int jbeg = data->beg[JDIR];
@@ -415,6 +420,7 @@ void SphericalShortChar::_sort_ray_walk(HostRayInfo& host_rays) {
 }
 
 void SphericalShortChar::compute_optical_depths() {
+  idfx::RegionWrapper region("SphericalShortChar::compute_optical_depths") ;
 
   if (haveUserOpacity) 
     user_opacity(data, kappa);
@@ -537,6 +543,8 @@ void SphericalShortChar::compute_optical_depths() {
 }
 
 void SphericalShortChar::compute_heating_rate(){
+  idfx::RegionWrapper region("SphericalShortChar::compute_heating_rate") ;
+
 
   if (haveUserRadiationField)
     user_radiation(data, radiation_field);
@@ -608,7 +616,7 @@ void SphericalShortChar::compute_heating_rate(){
         
         if (ktot > 0) {
           for (int s=0; s < num_species; s++) {
-            heating(s,k,j,i) += heat_l * (rho_all(s,k,j,i)*kappa(s,l)/ktot);
+            heating(s,k,j,i) += heat_l * (kappa(s,l)/ktot);
           }
         }
         
@@ -625,11 +633,11 @@ void SphericalShortChar::compute_heating_rate(){
 
         double hc[2][2] = {{0,0}, {0,0}};
         for (int l=0; l<num_bands; l++) {
-          hc[0][0] += F0[l] * exp_tau(k,j,i,l) * rho_all(s,k,j,i) * kappa(s,l) / u_opac;
-          hc[0][1] += F0[l] * exp_tau(k,j,i+1,l) * rho_all(s,k,j,i) * kappa(s,l) / u_opac;
+          hc[0][0] += F0[l] * exp_tau(k,j,i,l) *  kappa(s,l) / u_opac;
+          hc[0][1] += F0[l] * exp_tau(k,j,i+1,l) * kappa(s,l) / u_opac;
 
-          hc[1][0] += F0[l] * exp_tau(k,j+1,i,l) * rho_all(s,k,j,i) * kappa(s,l) / u_opac;
-          hc[1][1] += F0[l] * exp_tau(k,j+1,i+1,l) * rho_all(s,k,j,i) * kappa(s,l) / u_opac;
+          hc[1][0] += F0[l] * exp_tau(k,j+1,i,l) * kappa(s,l) / u_opac;
+          hc[1][1] += F0[l] * exp_tau(k,j+1,i+1,l) * kappa(s,l) / u_opac;
         }
         double hmin, hmax;
         hmin = std::min(hc[0][0], std::min(hc[0][1], std::min(hc[1][0], hc[1][1])));
@@ -645,7 +653,8 @@ void SphericalShortChar::compute_heating_rate(){
 
 
 void SphericalShortChar::GetBoundaryFlux(int dir, int side, IdefixArray2D<real> flux) {
- 
+  idfx::RegionWrapper region("SphericalShortChar::GetBoundaryFlux") ;
+
   const real u_flux = unit_luminosity / pow(idfx::units.GetLength(), 2);
 
   if (dir == IDIR) {
