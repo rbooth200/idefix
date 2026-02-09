@@ -68,7 +68,7 @@ void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP,
   real u_Kelvin = idfx::units.GetKelvin();
 
   IdefixArray4D<real> Vc;
-  real mu = 1;
+  real mu;
   if (spec == 0) {
     Vc = data->hydro->Vc;
     mu = data->radiation->mu;
@@ -81,8 +81,12 @@ void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP,
   idefix_for("FillKappaDust", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
       real kappa;
-      real T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
-      
+      real T ; 
+      if (spec == 0)
+        T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
+      else
+        T = Vc(TRD,k,j,i) * u_Kelvin ;
+
       if (beta == 1)
         kappa = T / sqrt(T0*T0 + T*T);
       else

@@ -19,7 +19,8 @@ MultiSpeciesFLD::MultiSpeciesFLD(Input &input, DataBlock *datain)
 
 void MultiSpeciesFLD::Init(Input &input, DataBlock *datain) {
 
-  idfx::pushRegion("MultiSpeciesFLD::Init");
+  idfx::RegionWrapper region("MultiSpeciesFLD::Init");
+  
   auto data = this->data;
   
   if (!input.Get<bool>("Dust", "have_energy", 0)) {
@@ -87,11 +88,11 @@ void MultiSpeciesFLD::Init(Input &input, DataBlock *datain) {
       }
     });
 
-  idfx::popRegion();
+  
 }
 
 void MultiSpeciesFLD::UpdatePressure(){
-      idfx::pushRegion("FLD::UpdatePressure");
+  idfx::RegionWrapper region("FLD::UpdatePressure");
 
   IdefixArray3D<real> Erad = this->Erad;  // Radiation energy
   IdefixArray4D<real>      Z = this->radZ;
@@ -136,8 +137,7 @@ void MultiSpeciesFLD::UpdatePressure(){
                                      data->beg[IDIR], data->end[IDIR],      
       KOKKOS_LAMBDA (int k, int j, int i) {
         real rho = Vc(RHO,k,j,i);
-        real prs = Vc(TRD,k,j,i); // Works for dust too if tracers are used.
-        real tmp = prs / rho;
+        real tmp = Vc(TRD,k,j,i); 
         real tgas= mu * Vc_gas(PRS,k,j,i) / Vc_gas(RHO,k,j,i);
 
         real gamma = Gamma(s,k,j,i);
@@ -146,19 +146,19 @@ void MultiSpeciesFLD::UpdatePressure(){
         real newtmp = (rho*cV*tmp + 3*l*tmp + dt*code_c*kappaP(s,k,j,i)*Erad(k,j,i) + gamma*tgas)/Z(s,k,j,i);
 
         if (haveIrradiation) {
-          newtmp += dt * Sirrad(s,k,j,i) / Z(s,k,j,i);
+          newtmp += dt * rho * Sirrad(s,k,j,i) / Z(s,k,j,i);
         }
 
-        Vc(TRD,k,j,i) = rho * newtmp ;
+        Vc(TRD,k,j,i) = newtmp ;
     });
   }
 
-  idfx::popRegion();
+  
 } 
 
 
 void MultiSpeciesFLD::FillUtils() {
- idfx::pushRegion("MultiSpeciesFLD::FillUtils");
+  idfx::RegionWrapper region("MultiSpeciesFLD::FillUtils");
 
   IdefixArray3D<real> Erad = this->Erad;  // Radiation energy
   IdefixArray3D<real>   nu = this->nu;
@@ -204,8 +204,8 @@ void MultiSpeciesFLD::FillUtils() {
   if (haveUserDefOpacity) 
     data->radiation->UserOpacityFuncCGS(data, kappaP, kappaR) ;
   else  {
-    auto _kappaR = data->radiation->kappaR;
-    auto _kappaP = data->radiation->kappaP;
+    auto _kappaR = data->radiation->constkappaR;
+    auto _kappaP = data->radiation->constkappaP;
 
     idefix_for("FillKappa", 0, num_species, kbeg, kend, jbeg, jend, ibeg, iend,
       KOKKOS_LAMBDA (int s, int k, int j, int i) {
@@ -266,7 +266,7 @@ void MultiSpeciesFLD::FillUtils() {
         Z(0,k,j,i) = rho*cV + 4*l;
 
         if (haveIrradiation) {
-          u_eff(k,j,i) += dt * Sirrad(0,k,j,i);
+          u_eff(k,j,i) += dt * rho * Sirrad(0,k,j,i);
         }
     });
   }
@@ -286,8 +286,7 @@ void MultiSpeciesFLD::FillUtils() {
     idefix_for("FillUtilsDust", kbeg, kend, jbeg, jend, ibeg, iend,
       KOKKOS_LAMBDA (int k, int j, int i) {
         real rho = Vc(RHO,k,j,i);
-        real prs = Vc(TRD,k,j,i);
-        real tmp = prs / rho;
+        real tmp = Vc(TRD,k,j,i);
 
         real gamma = Gamma(s,k,j,i) = 
           dt*gammaDrag.GetGamma(k,j,i)*alpha*rho*Vc_gas(RHO,k,j,i);
@@ -305,8 +304,8 @@ void MultiSpeciesFLD::FillUtils() {
         rhs(k,j,i) += -3*l*tmp + 4*l*(rho*cV*tmp + 3*l*tmp)/Zd;
 
         if (haveIrradiation) {
-          u_eff(k,j,i) += dt * Sirrad(s,k,j,i) * (gamma/Zd);
-          rhs  (k,j,i) += dt * Sirrad(s,k,j,i) * (4*l/Zd);
+          u_eff(k,j,i) += dt * rho * Sirrad(s,k,j,i) * (gamma/Zd);
+          rhs  (k,j,i) += dt * rho * Sirrad(s,k,j,i) * (4*l/Zd);
         }
     });
   }
@@ -318,11 +317,11 @@ void MultiSpeciesFLD::FillUtils() {
     });
 
 
-  idfx::popRegion();
+  
 
 }
 void MultiSpeciesFLD::FillMatrixCouplingTerms() {
-  idfx::pushRegion("MultiSpeciesFLD::FillMatrixCouplingTerms");
+  idfx::RegionWrapper region("MultiSpeciesFLD::FillMatrixCouplingTerms");
 
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR]; iend = data->end[IDIR];
@@ -375,7 +374,7 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
   const real code_aR =this->code_aR;
   const real mu = this->mu;
 
-  idfx::popRegion();
+  
 
 }
 void MultiSpeciesFLD::ShowConfig() {

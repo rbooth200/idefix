@@ -125,8 +125,8 @@ class FluxLimitedDiffusion {
   PrototypeOpacityFuncCGS    UserOpacityFuncCGS{NULL};
   bool haveUserDefOpacity{false};
 
-  IdefixArray1D<real> kappaR; // constant Rosseland opacity
-  IdefixArray1D<real> kappaP; // constant Planck opacity
+  IdefixArray1D<real> constkappaR; // constant Rosseland opacity
+  IdefixArray1D<real> constkappaP; // constant Planck opacity
 
   IdefixArray3D<real> Erad;  // Radiation energy
 

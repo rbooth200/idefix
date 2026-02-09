@@ -140,7 +140,7 @@ void Setup::InitFlow(DataBlock &data) {
                     d.dustVc[s](VX2,k,j,i) = 0.0;
                     d.dustVc[s](VX3,k,j,i) = 0.0;
 
-                    d.dustVc[s](TRD, k,j,i) = rho * T0 ;
+                    d.dustVc[s](TRD, k,j,i) = T0 ;
                 }
             }
         }

@@ -3,20 +3,21 @@
 #include "condensation.hpp"
 #include "units.hpp"
 #include "opacity.hpp"
+#include "potential.hpp"
 
 
 /* TODO: 
  - Radiation Pressure
- - Potentials (Stellar, Planet, rotation)
  - Coriolis Force
- - Condensation/Evaporation from surface.
 */
 
 void MyRadiationBoundary(DataBlock &data, int dir, BoundarySide side, real t, IdefixArray3D<real> &Erad);
 void Analysis(DataBlock & data);
 
+static bool surface_condensation = true;
+
 static real rho0, p, T0, d2g, C_surf;
-static IdefixArray2D<real> T_surf, F_surf;;
+static IdefixArray2D<real> T_surf, F_surf;
 std::string surf_file;
 std::array<int, 3> n;
 
@@ -28,6 +29,48 @@ std::unique_ptr<GasOpacity> gas_opac;
 std::unique_ptr<DustOpacity> dust_opac;
 std::unique_ptr<StellarProperties> star;
 
+TidalPotential tidal_potential(0,0,1);
+
+void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {    
+
+  idefix_for("ComputePotential", 0, data.np_tot[KDIR],
+                                 0, data.np_tot[JDIR],
+                                 0, data.np_tot[IDIR],
+    KOKKOS_LAMBDA (int k, int j, int i) {
+      real xpos = x(i) * cos(y(j)) - tidal_potential.get_semi_major();
+      real ypos = x(i) * sin(y(j)) * sin(z(k));
+      real zpos = x(i) * sin(y(j)) * cos(z(k));
+
+      phiP(k,j,i) = tidal_potential(xpos, ypos, zpos);
+  });
+
+}
+
+template<typename Phys>
+void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
+
+  IdefixArray4D<real> Vc = hydro->Vc;
+  const int ighost = hydro->data->nghost[IDIR];
+
+  if(dir==IDIR && side == BoundarySide::left) {
+    hydro->boundary->BoundaryFor("UserDefBoundary", dir, side,
+      KOKKOS_LAMBDA (int k, int j, int i) {
+          
+        const int iref = 2*(ighost) - i - 1;
+        const int sign = Phys::dust? 1 : -1;
+
+        for (int n=0; n<Phys::nvar; n++){
+          if(n == (VX1+dir)) 
+            Vc(n,k,j,i) = sign * Vc(n,k,j,iref);
+          else
+            Vc(n,k,j,i) = Vc(n,k,j,iref);
+        }
+
+      });
+  } else {
+    IDEFIX_ERROR("UserBoundary not implemented for this side/dir");
+  }
+}
 
 void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
@@ -47,7 +90,7 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
   idefix_for("ApplyCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR], 0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i)  {
       real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu * u_temp;
-      real T_d = Dust(TRD,k,j,i) / Dust(RHO, k,j,i) * u_temp;
+      real T_d = Dust(TRD,k,j,i) * u_temp;
       
       // Save total density and momentum
       real rho_t = Gas(RHO, k,j,i) + Dust(RHO, k,j,i);
@@ -83,7 +126,6 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
       Dust(RHO, k,j,i) = rho_d;
       Gas(RHO, k,j,i)  = rho_g; 
 
-      Dust(TRD, k,j,i) = rho_d * T_d / u_temp;
       Gas(PRS, k,j,i)  = rho_g * T_g / (mu * u_temp);
 
 
@@ -109,6 +151,32 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
   }); 
 
+  // Apply condensation at the surface
+  if (surface_condensation) {
+    int ibeg = data.beg[IDIR];
+    IdefixArray3D<real> Ax1 = data.A[IDIR];
+    IdefixArray3D<real> dV = data.dV;
+    real k0 = sqrt(8/M_PI);
+
+    idefix_for("SurfaceCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR],
+      KOKKOS_LAMBDA (int k, int j)  {
+        real T_g = Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg) * mu * u_temp;
+        real T_s = T_surf(k, j);
+
+        real v_t = k0 * sqrt(Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg));
+        
+        // Equilibrium vapour density
+        real rho_v = silicate.rho_vap(T_s) * sqrt(T_g/T_s) / u_den;
+
+        real K = v_t * silicate.P_stick * Ax1(k,j,ibeg) / dV(k,j,ibeg);
+        real x = K*dt; 
+
+        // Compute the new gas density.
+        Gas(RHO, k,j,ibeg) = Gas(RHO, k,j,ibeg)*exp(-x) - rho_v*expm1(-x);
+
+        // For now let's leave the temperature and velocity at the boundary.
+    }); 
+  }
 }
 
 
@@ -130,12 +198,6 @@ void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
     else
       column(s, k, j) = 0;
   }); 
-}
-
-// User-defined boundaries
-void UserdefBoundary(Hydro *hydro, int dir, BoundarySide side, real t) {
-   auto *data = hydro->data;
-    throw std::runtime_error("User boundary not implemented");
 }
 
 
@@ -210,13 +272,23 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
   // Total heat capacity of the surface
   C_surf = input.GetOrSet<real>("Setup", "surface_heat_capacity", 0, 3.0) / idfx::units.GetLength();
-
+  surface_condensation = input.GetOrSet<bool>("Setup", "surface_condensation", 0, true);
 
   surf_file = input.Get<std::string>("Output", "dmp_dir", 0) + "/surface.txt";
 
+  real GM = idfx::units.G / (idfx::units.GetLength() * pow(idfx::units.GetVelocity(), 2));
+
+  real a_p = input.Get<real>("Setup", "a_p", 0) * idfx::units.au / idfx::units.GetLength();
+  real GMstar = GM * input.Get<real>("Setup", "Mstar", 0) * idfx::units.M_sun;
+  real GMplanet = GM * input.GetOrSet<real>("Setup", "M_p", 0, 0) * idfx::units.M_earth;
+  
+  real R_p = grid.xbeg[0];
+  idfx::cout << "Hill Radius: " << pow(GMplanet/(3*GMstar), 1./3.) * a_p / R_p << " R_p\n";
+
+  tidal_potential = TidalPotential(GMstar, GMplanet, a_p);
 
   gas_opac = std::make_unique<GasOpacity>();
-  dust_opac = std::make_unique<DustOpacity>(1e-4);
+  dust_opac = std::make_unique<DustOpacity>(input.Get<real>("Setup", "grain_size", 0));
 
   star = std::make_unique<StellarProperties>(
     input.Get<real>("Setup", "Mstar", 0),
@@ -226,6 +298,11 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   );
   star->compute_radiation_field(gas_opac->num_wle_bins,  gas_opac->wle_micron);
 
+
+  data.hydro->EnrollUserDefBoundary(&UserBoundary<DefaultPhysics>);
+  data.dust[0]->EnrollUserDefBoundary(&UserBoundary<DustPhysics>);
+
+  data.gravity->EnrollPotential(&MyPotential);
 
   data.irradiation->EnrollUserColumnBoundary(&MyColumnBoundary);
   data.irradiation->EnrollUserOpacity(&IrradiationOpacity);
@@ -299,7 +376,7 @@ void Setup::InitFlow(DataBlock &data) {
                     d.dustVc[s](VX2,k,j,i) = 0.0;
                     d.dustVc[s](VX3,k,j,i) = 0.0;
 
-                    d.dustVc[s](TRD, k,j,i) = rho * T0;
+                    d.dustVc[s](TRD, k,j,i) = T0;
                 }
             }
         }

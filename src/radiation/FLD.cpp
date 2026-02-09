@@ -56,13 +56,13 @@ KOKKOS_INLINE_FUNCTION real lagdiff1(real x1, real x2, real y1, real y2, real x)
 
 
 FluxLimitedDiffusion::FluxLimitedDiffusion(Input &input, DataBlock *datain) {
-  idfx::pushRegion("FLD::FLD");
+ idfx::RegionWrapper region("FLD::FLD");
   this->data = datain;
 
   Init(input, this->data);
   haveInitialisedRadiation = true;
 
-  idfx::popRegion();
+  
 }
 
 FLDMatrix::FLDMatrix(Input& input, DataBlock* datain) {
@@ -188,7 +188,7 @@ FLDMatrix::FLDMatrix(Input& input, DataBlock* datain) {
 
 // done
 void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
-  idfx::pushRegion("FLD::Init");
+ idfx::RegionWrapper region("FLD::Init");
 
   // Save the parents data objects
   this->data = datain;
@@ -248,12 +248,12 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
       this->opacityType = userdefkappa;
     }
     else if (rosseland.compare("constant") == 0){
-      this->kappaR = IdefixArray1D<real>("kappaR", num_species);
+      this->constkappaR = IdefixArray1D<real>("kappaR", num_species);
 
-      IdefixHostArray1D<real> kappa_host = Kokkos::create_mirror_view(this->kappaR) ;
+      IdefixHostArray1D<real> kappa_host = Kokkos::create_mirror_view(this->constkappaR) ;
       for (int s = 0; s < num_species; s++)
         kappa_host(s) = input.GetOrSet<real>("Radiation","kappaR",1+s, 1.0);
-      Kokkos::deep_copy(this->kappaR,kappa_host);
+      Kokkos::deep_copy(this->constkappaR,kappa_host);
 
       this->opacityType = constantkappa;
     }
@@ -276,12 +276,12 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
       userdefPlanck = true ;
     }
     else if (planck.compare("constant") == 0) {
-      this->kappaP = IdefixArray1D<real>("kappaP", num_species);
+      this->constkappaP = IdefixArray1D<real>("kappaP", num_species);
 
-      IdefixHostArray1D<real> kappa_host = Kokkos::create_mirror_view(this->kappaP) ;
+      IdefixHostArray1D<real> kappa_host = Kokkos::create_mirror_view(this->constkappaP) ;
       for (int s = 0; s < num_species; s++)
         kappa_host(s) = input.GetOrSet<real>("Radiation","kappaP",1+s, 1.0);
-      Kokkos::deep_copy(this->kappaP,kappa_host);
+      Kokkos::deep_copy(this->constkappaP,kappa_host);
 
       userdefPlanck = false ;
     }
@@ -402,11 +402,13 @@ void FluxLimitedDiffusion::Init(Input &input, DataBlock *datain) {
   lvalue = FLD_matrix->lvalue; 
   rvalue = FLD_matrix->rvalue; 
 
-  idfx::popRegion();
+  
 }
 
 // Compute the flux limiter for each cell
 void FluxLimitedDiffusion::FillFluxLimiter(IdefixArray4D<real> rho_kappaR, IdefixArray3D<real> lambda) {
+ idfx::RegionWrapper region("FluxLimitedDiffusion::FillFluxLimiter");
+
   // configure flux limiter
 
   // First, compute the flux limiter parameter, R
@@ -481,10 +483,12 @@ void FluxLimitedDiffusion::FillFluxLimiter(IdefixArray4D<real> rho_kappaR, Idefi
           break ;
       }
   }) ;
+
+  
 }
 
 void FluxLimitedDiffusion::PreconditionMatrix() {
-  idfx::pushRegion("Radiation::ApplyPreconditioner");
+ idfx::RegionWrapper region("Radiation::ApplyPreconditioner");
   
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR];
@@ -557,12 +561,13 @@ void FluxLimitedDiffusion::PreconditionErad(bool undo) {
         Erad(k,j,i) /= P(k,j,i);
       });
   }
-
+ 
+  
 }
 
 // should be done
 void FluxLimitedDiffusion::InitSolver() {
-  idfx::pushRegion("FLD::InitSolver");
+ idfx::RegionWrapper region("FLD::InitSolver");
 
   // Loading needed attributes
   IdefixArray3D<real> Erad = this->Erad;
@@ -594,12 +599,12 @@ void FluxLimitedDiffusion::InitSolver() {
   FillMatrixTransportTerms();
 
 
-  idfx::popRegion();
+  
 }
 
 // done
 void FLDMatrix::operator()(IdefixArray3D<real> array, IdefixArray3D<real> laplacian) {
-  idfx::pushRegion("FLD::ComputeLaplacian");
+ idfx::RegionWrapper region("FLD::ComputeLaplacian");
 
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR];
@@ -627,13 +632,13 @@ void FLDMatrix::operator()(IdefixArray3D<real> array, IdefixArray3D<real> laplac
       laplacian(k, j, i) = Delta;
     });
 
-  idfx::popRegion();
+  
 }
 
 // done
 void FLDMatrix::EnforceBoundary(int dir, BoundarySide side, RadiationBoundaryType type,
                                   IdefixArray3D<real> &arr, bool apply_physical) {
-  idfx::pushRegion("FLD::EnforceBoundary");
+  idfx::RegionWrapper region("FLD::EnforceBoundary");
 
   IdefixArray3D<real> localVar = arr;
 
@@ -657,7 +662,10 @@ void FLDMatrix::EnforceBoundary(int dir, BoundarySide side, RadiationBoundaryTyp
 
   // Alex: we now use the matrix instead for anything except for periodic
   // ... but in the future we should support more (e.g., userdef)
-  if (type != periodic && !apply_physical) return;
+  if (type != periodic && !apply_physical) {
+    
+    return;
+  }
 
   switch(type) {
     case internalradiation:
@@ -763,7 +771,7 @@ void FLDMatrix::EnforceBoundary(int dir, BoundarySide side, RadiationBoundaryTyp
     }
   }
 
-  idfx::popRegion();
+  
 }
 
 void FLDMatrix::EnrollUserDefBoundary(UserDefBoundaryFunc myFunc) {
@@ -789,7 +797,7 @@ void FluxLimitedDiffusion::EnrollUserDefOpacityCGS(PrototypeOpacityFuncCGS myFun
 
 // done
 void FLDMatrix::SetBoundaries(IdefixArray3D<real> &arr, bool apply_physical) {
-  idfx::pushRegion("FLD::SetBoundaries");
+  idfx::RegionWrapper region("FLD::SetBoundaries");
 
   #ifdef WITH_MPI
   arr4D = IdefixArray4D<real> (arr.data(), 1, data->np_tot[KDIR],
@@ -819,12 +827,12 @@ void FLDMatrix::SetBoundaries(IdefixArray3D<real> &arr, bool apply_physical) {
    EnforceBoundary(dir, right, rbound[dir], arr, apply_physical);
   }
 
-  idfx::popRegion();
+  
 }
 
 // done
 void FluxLimitedDiffusion::SolveSystem() {
-  idfx::pushRegion("FLD::SolveSystem");
+ idfx::RegionWrapper region("FLD::SolveSystem");
 
   IdefixArray3D<real> Erad = this->Erad;
   Kokkos::Timer timer;
@@ -886,12 +894,13 @@ void FluxLimitedDiffusion::SolveSystem() {
   FLD_matrix->SetBoundaries(Erad, true);
   UpdatePressure();
   elapsedTime += timer.seconds();
-  idfx::popRegion();
+
+  
 }
 
 
 void FluxLimitedDiffusion::FillMatrixTransportTerms() {
-  idfx::pushRegion("FLD::FillMatrixTransportTerms");
+  idfx::RegionWrapper region("FLD::FillMatrixTransportTerms");
 
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR]; iend = data->end[IDIR];
@@ -1060,7 +1069,7 @@ D_EXPAND(
               break ;
             case FLDMatrix::RadiationBoundaryType::neumann:
               M(0,k,j,i) += M(4,k,j,i);
-              const real dx_nu = 0.5*dx2(j+1) / nu(k,j+1,i) + 0.5*dx1(j) / nu(k,j,i);
+              const real dx_nu = 0.5*dx2(j+1) / nu(k,j+1,i) + 0.5*dx2(j) / nu(k,j,i);
               rhs(k,j,i) += rvalue[1] * M(4,k,j,i) * dx_nu;
               M(4,k,j,i) = 0;
               break ;
@@ -1092,7 +1101,7 @@ D_EXPAND(
               break ;
             case FLDMatrix::RadiationBoundaryType::neumann:
               M(0,k,j,i) += M(6,k,j,i);
-              const real dx_nu = 0.5*dx2(k+1) / nu(k+1,j,i) + 0.5*dx3(k) / nu(k,j,i);
+              const real dx_nu = 0.5*dx3(k+1) / nu(k+1,j,i) + 0.5*dx3(k) / nu(k,j,i);
               rhs(k,j,i) += rvalue[2] * M(6,k,j,i) * dx_nu;
               M(6,k,j,i) = 0;
           break ;
@@ -1103,7 +1112,7 @@ D_EXPAND(
       if (havePreconditioner) P(k,j,i) = sqrt(fabs(M(0,k,j,i)));
     });
   
-  idfx::popRegion();
+  
 }
 
 
@@ -1117,7 +1126,7 @@ TwoTemperatureFLD::TwoTemperatureFLD(Input &input, DataBlock *datain)
 
 void TwoTemperatureFLD::Init(Input &input, DataBlock *datain) {
 
-  idfx::pushRegion("TwoTempFLD::Init");
+  idfx::RegionWrapper region("TwoTempFLD::Init");
   auto data = this->data;
 
   // Initialize our workspace arrays
@@ -1146,13 +1155,13 @@ void TwoTemperatureFLD::Init(Input &input, DataBlock *datain) {
       }
     });
 
-  idfx::popRegion();
+  
 }
 
 
 // done
 void TwoTemperatureFLD::UpdatePressure() {
-  idfx::pushRegion("FLD::UpdatePressure");
+  idfx::RegionWrapper region("FLD::UpdatePressure");
 
   IdefixArray3D<real> Erad = this->Erad;  // Radiation energy
   IdefixArray4D<real> radY = this->radY;  // κP ρ c dt -> dimensionless
@@ -1181,19 +1190,19 @@ void TwoTemperatureFLD::UpdatePressure() {
       real num   = tmp * (1 + 3*x) + y * Erad(k,j,i)/(rho*cV);
       if (haveIrradiation) {
         for (int s=0; s < num_species; s++) 
-          num += Sirrad(s,k,j,i)*dt/(rho*cV);
+          num += Sirrad(s,k,j,i)*dt/cV;
       }
       real denom = 1 + 4*x;
       real newtmp = num / denom;
       Vc(PRS,k,j,i) = newtmp * rho / mu;
   });
 
-  idfx::popRegion();
+  
 }
 
 // done
 void TwoTemperatureFLD::FillUtils() {
-  idfx::pushRegion("FLD::FillUtils");
+ idfx::RegionWrapper region("FLD::FillUtils");
 
   IdefixArray3D<real> Erad = this->Erad;  // Radiation energy
   IdefixArray4D<real> radY = this->radY;  // κP ρ c dt -> dimensionless
@@ -1236,8 +1245,8 @@ void TwoTemperatureFLD::FillUtils() {
   if (haveUserDefOpacity) 
     data->radiation->UserOpacityFuncCGS(data, _kappaP, _kappaR) ;
   else  {
-    auto kappaR = data->radiation->kappaR;
-    auto kappaP = data->radiation->kappaP;
+    auto kappaR = data->radiation->constkappaR;
+    auto kappaP = data->radiation->constkappaP;
 
     idefix_for("FillKappa", 0, num_species, kbeg, kend, jbeg, jend, ibeg, iend,
       KOKKOS_LAMBDA (int s, int k, int j, int i) {
@@ -1293,16 +1302,15 @@ void TwoTemperatureFLD::FillUtils() {
         }
 
         if (haveIrradiation) {
-          rhs(k,j,i) += Sirrad(s,k,j,i) * dt * 4 * radX(0,k,j,i) / (1 + 4 * radX(0,k,j,i));
+          rhs(k,j,i) += Sirrad(s,k,j,i) * rho * dt * 4 * radX(0,k,j,i) / (1 + 4 * radX(0,k,j,i));
         }
     });
   }
 
-  idfx::popRegion();
 }
 
 void TwoTemperatureFLD::FillMatrixCouplingTerms() {
-  idfx::pushRegion("FLD::FillMatrixCouplingTerms");
+  idfx::RegionWrapper region("FLD::FillMatrixCouplingTerms");
 
   int ibeg, iend, jbeg, jend, kbeg, kend;
   ibeg = data->beg[IDIR]; iend = data->end[IDIR];
@@ -1329,7 +1337,7 @@ void TwoTemperatureFLD::FillMatrixCouplingTerms() {
       M(0,k,j,i) = 1 + radY(0,k,j,i) / (1 + 4*radX(0,k,j,i));
     });
   
-  idfx::popRegion();
+  
 }
 
 // done
