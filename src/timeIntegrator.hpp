@@ -55,13 +55,14 @@ class TimeIntegrator {
 
   double computeLastLog;  // Timer for actual computeTime
 
-  double lastLog;         // time for the last log (s)
-  double lastMpiLog;      // time for the last MPI log (s)
-  double lastSGLog;       // time for the last SelfGravity log (s)
-  double lastRadiationLog;// time for last Radiation log (s)
-  double maxRuntime;      // Maximum runtime requested (disabled when negative)
-  int64_t cyclePeriod;    // # of cycles between two logs
-  Kokkos::Timer timer;    // Internal timer of the integrator
+  double lastLog;            // time for the last log (s)
+  double lastMpiLog;         // time for the last MPI log (s)
+  double lastSGLog;          // time for the last SelfGravity log (s)
+  double lastRadiationLog;   // time for last Radiation log (s)
+  double lastIrradiationLog; // time for last Irradiation log (s)
+  double maxRuntime;         // Maximum runtime requested (disabled when negative)
+  int64_t cyclePeriod;       // # of cycles between two logs
+  Kokkos::Timer timer;       // Internal timer of the integrator
 };
 
 #endif // TIMEINTEGRATOR_HPP_

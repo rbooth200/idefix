@@ -146,10 +146,10 @@ DataBlock::DataBlock(Grid &grid, Input &input) {
 
   // Initialise radiation if needed
   if(input.CheckBlock("Radiation")) {
-    bool multi_species = false ;
+    bool multi_species = false;
     if (input.CheckBlock("Dust")) {
       if (input.Get<int>("Dust","nSpecies",0) > 0) {
-        if(input.GetOrSet<bool>("Dust","have_energy",0, false)){
+        if(input.GetOrSet<bool>("Dust","have_energy",0, false)) {
           multi_species = true;
     }}}
     if (multi_species) {
@@ -162,17 +162,21 @@ DataBlock::DataBlock(Grid &grid, Input &input) {
 
   if(input.CheckBlock("Irradiation")) {
     std::string type =  input.GetOrSet<std::string>("Irradiation","type", 0, "sph_long_char");
-    if (type == "sph_long_char")
+    if (type == "sph_long_char") {
       this->irradiation = std::make_unique<LongCharIrradiation>(input, this);
-    else if (type == "sph_short_char")
-      this->irradiation = std::make_unique<SphericalShortChar>(input, this);
+    }
     else {
-      std::stringstream msg;
-      msg << "FLD:: Unknown Irradiation model: " << type;
-      IDEFIX_ERROR(msg);
-    } 
+      if (type == "sph_short_char") {
+        this->irradiation = std::make_unique<SphericalShortChar>(input, this);
+      }
+      else {
+        std::stringstream msg;
+        msg << "FLD:: Unknown Irradiation model: " << type;
+        IDEFIX_ERROR(msg);
+      }
+    }
 
-    this->haveIrradiation = true ;
+    this->haveIrradiation = true;
   }
 
   // Initialise dust grains if needed

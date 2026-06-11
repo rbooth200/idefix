@@ -29,7 +29,7 @@ class DustOpacity {
 
 
   void evaluate_opacity(int num_wle, IdefixArray1D<real> wle_micron, IdefixArray2D<real> kappa, int spec);
-  void evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, IdefixArray4D<real> kR, int spec);
+  void evaluate_mean_opacity(DataBlock* data, IdefixArray3D<real> kP, IdefixArray3D<real> kR, int spec);
 
  private:
   real _k0, _a, _T0, _beta;
@@ -38,12 +38,12 @@ class DustOpacity {
 class GasOpacity {
  public:
   constexpr static int num_wle_bins = 41;
-  IdefixArray1D<real> wle_micron, kappa_2000; 
+  IdefixArray1D<real> wle_micron, kappa_2000;
 
   GasOpacity();
-  
+
   void evaluate_opacity(IdefixArray2D<real> kappa);
-  void evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, IdefixArray4D<real> kR);
+  void evaluate_mean_opacity(DataBlock* data, IdefixArray3D<real> kP, IdefixArray3D<real> kR);
 
  private:
 

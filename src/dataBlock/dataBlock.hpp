@@ -165,14 +165,14 @@ class DataBlock {
   // Do we have Gravity ?
   bool haveGravity{false};
   std::unique_ptr<Gravity> gravity;
-  
+
   // Do we have Radiation ?
-  bool haveIrradiation{false} ;
-  std::unique_ptr<Irradiation> irradiation ;
+  bool haveIrradiation{false};
+  std::unique_ptr<Irradiation> irradiation;
 
   bool haveRadiation{false};
   std::unique_ptr<FluxLimitedDiffusion> radiation;
-  
+
   // User step functions (before or after the main integrator step)
   void LaunchUserStepFirst();     ///< perform user-defined step before main integration step
   void LaunchUserStepLast();      ///< Perform user-defined step after main integration step
