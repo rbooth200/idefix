@@ -144,6 +144,9 @@ void DataBlockHost::SyncToDevice() {
     }
   }
 
+  if (data->haveRadiation)
+    Kokkos::deep_copy(data->radiation->Erad, Erad);
+
   idfx::popRegion();
 }
 
@@ -182,6 +185,9 @@ void DataBlockHost::SyncFromDevice() {
       }
     }
   }
+
+  if (data->haveRadiation)
+    Kokkos::deep_copy(Erad, data->radiation->Erad);
 
   idfx::popRegion();
 }

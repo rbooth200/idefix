@@ -63,7 +63,6 @@ void MultiSpeciesFLD::Init(Input& input, DataBlock* datain) {
   auto u_eff = this->u_eff;
   auto l_eff = this->l_eff;
   int num_species = this->num_species;
-  bool havePreconditioner = this->havePreconditioner;
 
   idefix_for(
       "InitRadiationArrays", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
@@ -87,22 +86,24 @@ void MultiSpeciesFLD::UpdatePressure() {
   IdefixArray3D<real> k_eff = this->k_eff;
   IdefixArray3D<real> u_eff = this->u_eff;
 
-  const real cV = this->cV;
   const real dt = this->dt;
   const real code_c = this->code_c;
+  const real code_aR = this->code_aR;
 
   const int haveIrradiation = data->haveIrradiation;
   IdefixArray4D<real> Sirrad;
   if (haveIrradiation) Sirrad = data->irradiation->irradiationHeating;
   int num_species = this->num_species;
+  const real mu = this->mu;
 
   {
     IdefixArray4D<real> Vc = data->hydro->Vc;
-    const real mu = this->mu;
 
-    idefix_for(
-        "UpdatePressureGas", data->beg[KDIR], data->end[KDIR], data->beg[JDIR], data->end[JDIR],
-        data->beg[IDIR], data->end[IDIR], KOKKOS_LAMBDA(int k, int j, int i) {
+    idefix_for("UpdatePressureGas", 
+                data->beg[KDIR], data->end[KDIR], 
+                data->beg[JDIR], data->end[JDIR],
+                data->beg[IDIR], data->end[IDIR], 
+        KOKKOS_LAMBDA(int k, int j, int i) {
           real rho = Vc(RHO, k, j, i);
 
           real newtmp =
@@ -112,6 +113,8 @@ void MultiSpeciesFLD::UpdatePressure() {
         });
   }
 
+  IdefixArray4D<real> kappaP = this->kappaP;
+
   for (int s = 1; s < num_species; s++) {
     IdefixArray4D<real> Vc_gas = data->hydro->Vc;
     IdefixArray4D<real> Vc = data->dust[s - 1]->Vc;
@@ -119,9 +122,11 @@ void MultiSpeciesFLD::UpdatePressure() {
 
     real cV = data->dust[s - 1]->drag->cV;
 
-    idefix_for(
-        "UpdatePressureDust", data->beg[KDIR], data->end[KDIR], data->beg[JDIR], data->end[JDIR],
-        data->beg[IDIR], data->end[IDIR], KOKKOS_LAMBDA(int k, int j, int i) {
+    idefix_for("UpdatePressureDust", 
+                data->beg[KDIR], data->end[KDIR],
+                data->beg[JDIR], data->end[JDIR],
+                data->beg[IDIR], data->end[IDIR], 
+        KOKKOS_LAMBDA(int k, int j, int i) {
           real rho = Vc(RHO, k, j, i);
           real tmp = Vc(TRD, k, j, i);
           real tgas = mu * Vc_gas(PRS, k, j, i) / Vc_gas(RHO, k, j, i);
@@ -316,14 +321,16 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
   IdefixArray4D<real> Z = this->radZ;
   IdefixArray3D<real> cV_eff = this->cV_eff;
   IdefixArray3D<real> u_eff = this->u_eff;
+  IdefixArray3D<real> k_eff = this->k_eff;
+
 
   IdefixArray4D<real> kappaP = this->kappaP;
 
   const real code_c = this->code_c;
   const real dt = this->dt;
 
-  idefix_for(
-      "CouplingGas", kbeg, kend, jbeg, jend, ibeg, iend, KOKKOS_LAMBDA(int k, int j, int i) {
+  idefix_for("CouplingGas", kbeg, kend, jbeg, jend, ibeg, iend, 
+    KOKKOS_LAMBDA(int k, int j, int i) {
         M(0, k, j, i) = 1 + dt * code_c * k_eff(k, j, i) * cV_eff(k, j, i) / Z(0, k, j, i);
       });
 
@@ -331,21 +338,14 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
     IdefixArray4D<real> Vc = data->dust[s - 1]->Vc;
     real cV = data->dust[s - 1]->drag->cV;
 
-    idefix_for(
-        "CouplingDust", kbeg, kend, jbeg, jend, ibeg, iend, KOKKOS_LAMBDA(int k, int j, int i) {
+    idefix_for("CouplingDust", kbeg, kend, jbeg, jend, ibeg, iend,
+      KOKKOS_LAMBDA(int k, int j, int i) {
           real rho = Vc(RHO, k, j, i);
 
           M(0, k, j, i) += dt * code_c * rho * cV * kappaP(s, k, j, i) / Z(s, k, j, i);
         });
   }
 
-  auto rhs = this->rhs;
-  auto Erad = this->Erad;
-  auto Vc = this->data->hydro->Vc;
-  auto Vc2 = this->data->dust[0]->Vc;
-
-  const real code_aR = this->code_aR;
-  const real mu = this->mu;
 }
 void MultiSpeciesFLD::ShowConfig() {
   idfx::cout << "RT: MultiSpeciesFLD with " << num_species << "species\n";

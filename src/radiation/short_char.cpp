@@ -182,8 +182,11 @@ void SphericalShortChar::_build_rays(HostRayInfo& host_rays) {
   int iend = data->end[IDIR];
   int jend = data->end[JDIR];
 
-  IdefixArray1D<double>& re = data->xl[IDIR];
-  IdefixArray1D<double>& the = data->xl[JDIR];
+  DataBlockHost d(*data);
+
+
+  auto& re = d.xl[IDIR];
+  auto& the = d.xl[JDIR];
 
   for (int j = jbeg; j <= jend; j++)
     for (int i = ibeg; i <= iend; i++) {
@@ -292,8 +295,8 @@ void SphericalShortChar::_build_ray_weights() {
   IdefixArray2D<double> start = rays->start;
   IdefixArray2D<double> weights = rays->weights;
 
-  idefix_for(
-      "BuildRayWeights", jbeg, jend + 1, ibeg, iend + 1, KOKKOS_LAMBDA(int j, int i) {
+  idefix_for("BuildRayWeights", jbeg, jend + 1, ibeg, iend + 1, 
+      KOKKOS_LAMBDA(int j, int i) {
         if (type(j, i) == RayInfo::RayType::RADIAL) {
           double th = start(j, i);
 
@@ -381,10 +384,9 @@ void SphericalShortChar::_sort_ray_walk(HostRayInfo& host_rays) {
   _max_order += 1;
 
   // Step 2: Create the storage for the order:
-  _cells_per_order = IdefixArray1D<int>("cells_order", _max_order);
+  _cells_per_order = std::vector<int>(_max_order, 0);
   _cells_in_order = IdefixArray2D<int>("cell_ids", shape[1] * shape[0], 2);
 
-  IdefixArray1D<int>::HostMirror cells_per_order = Kokkos::create_mirror_view(_cells_per_order);
   IdefixArray2D<int>::HostMirror cells_in_order = Kokkos::create_mirror_view(_cells_in_order);
 
   // Step 3: Store the cells in order:
@@ -397,11 +399,10 @@ void SphericalShortChar::_sort_ray_walk(HostRayInfo& host_rays) {
           cells_in_order(count, 1) = j;
 
           count++;
-          cells_per_order[order] = count;
         }
       }
+  _cells_per_order[order] = count;
   }
-  Kokkos::deep_copy(_cells_per_order, cells_per_order);
   Kokkos::deep_copy(_cells_in_order, cells_in_order);
 }
 
@@ -425,8 +426,11 @@ void SphericalShortChar::compute_optical_depths() {
 
   IdefixArray4D<double> kapp = this->kapp;
   IdefixArray4D<double> rho_all = this->rho_all;
+  IdefixArray3D<double> boundaryColumn = this->boundaryColumn;
+  IdefixArray3D<double> _tau_boundary = this->_tau_boundary;
 
   const real u_opac = unit_opacity;
+  int num_bands = this->num_bands;
 
   // Fill boundaries as we need the density.
   data->SetBoundaries();
@@ -440,23 +444,22 @@ void SphericalShortChar::compute_optical_depths() {
     if (this->opacityType == OpacityType::constant || this->opacityType == OpacityType::userconst) {
       IdefixArray2D<double> kappa = this->kappa;
 
-      idefix_for(
-          "CornerOpacity", kbeg, kend, jbeg, jend + 1, ibeg, iend + 1,
-          KOKKOS_LAMBDA(int k, int j, int i) {
-            double rho = 0.25 * (Vc(RHO, k, j, i) + Vc(RHO, k, j, i - 1) + Vc(RHO, k, j - 1, i) +
-                                 Vc(RHO, k, j - 1, i - 1));
+      idefix_for("CornerOpacity", kbeg, kend, jbeg, jend + 1, ibeg, iend + 1,
+        KOKKOS_LAMBDA(int k, int j, int i) {
+          double rho = 0.25 * (Vc(RHO, k, j, i) + Vc(RHO, k, j, i - 1) + Vc(RHO, k, j - 1, i) +
+                                Vc(RHO, k, j - 1, i - 1));
 
-            for (int l = 0; l < num_bands; l++) {
-              if (s == 0) kapp(k, j, i, l) = 0;
-              kapp(k, j, i, l) += kappa(s, l) * rho / u_opac;
-            }
+          for (int l = 0; l < num_bands; l++) {
+            if (s == 0) kapp(k, j, i, l) = 0;
+            kapp(k, j, i, l) += kappa(s, l) * rho / u_opac;
+          }
 
-            // Save the density in the cell center
-            rho_all(s, k, j, i) = Vc(RHO, k, j, i);
-          });
+          // Save the density in the cell center
+          rho_all(s, k, j, i) = Vc(RHO, k, j, i);
+        });
 
-      idefix_for(
-          "BoundaryOpacity", kbeg, kend, jbeg, jend, KOKKOS_LAMBDA(int k, int j) {
+      idefix_for("BoundaryOpacity", kbeg, kend, jbeg, jend, 
+        KOKKOS_LAMBDA(int k, int j) {
             for (int l = 0; l < num_bands; l++) {
               if (s == 0) _tau_boundary(k, j, l) = 0;
               _tau_boundary(k, j, l) += kappa(s, l) * boundaryColumn(s, k, j) / u_opac;
@@ -486,38 +489,38 @@ void SphericalShortChar::compute_optical_depths() {
 
     IdefixArray4D<double> exp_tau = this->exp_tau;
 
-    idefix_for(
-        "ComputeTau", kbeg, kend, cbeg, cend, 0, num_bands, KOKKOS_LAMBDA(int k, int cell, int l) {
-          int i = cells_in_order(cell, 0);
-          int j = cells_in_order(cell, 1);
+    idefix_for("ComputeTau", kbeg, kend, cbeg, cend, 0, num_bands, 
+      KOKKOS_LAMBDA(int k, int cell, int l) {
+        int i = cells_in_order(cell, 0);
+        int j = cells_in_order(cell, 1);
 
-          if (order == 0) {  // Start with boundary
-            if (type(j, i) == RayInfo::RayType::CORE)
-              exp_tau(k, j, i, l) = 0;
-            else if (type(j, i) == RayInfo::RayType::EDGE)
-              exp_tau(k, j, i, l) = exp(-_tau_boundary(k, j, l));
-          } else {  // Not boundary
-            int ii = index_i(j, i);
-            int jj = index_j(j, i);
-            double w = weights(j, i);
+        if (order == 0) {  // Start with boundary
+          if (type(j, i) == RayInfo::RayType::CORE)
+            exp_tau(k, j, i, l) = 0;
+          else if (type(j, i) == RayInfo::RayType::EDGE)
+            exp_tau(k, j, i, l) = exp(-_tau_boundary(k, j, l));
+        } else {  // Not boundary
+          int ii = index_i(j, i);
+          int jj = index_j(j, i);
+          double w = weights(j, i);
 
-            // Interpolate depth and opacity to the start of the ray
-            double f = exp_tau(k, jj, ii, l) * w;
-            double kappa = kapp(k, jj, ii, l) * w;
-            if (type(j, i) == RayInfo::RayType::RADIAL) {
-              if (jj > jbeg) {
-                f += exp_tau(k, jj - 1, ii, l) * (1 - w);
-                kappa += kapp(k, jj - 1, ii, l) * (1 - w);
-              }
-            } else if (type(j, i) == RayInfo::RayType::POLOIDAL) {
-              if (ii > ibeg) {
-                f += exp_tau(k, jj, ii - 1, l) * (1 - w);
-                kappa += kapp(k, jj, ii - 1, l) * (1 - w);
-              }
+          // Interpolate depth and opacity to the start of the ray
+          double f = exp_tau(k, jj, ii, l) * w;
+          double kappa = kapp(k, jj, ii, l) * w;
+          if (type(j, i) == RayInfo::RayType::RADIAL) {
+            if (jj > jbeg) {
+              f += exp_tau(k, jj - 1, ii, l) * (1 - w);
+              kappa += kapp(k, jj - 1, ii, l) * (1 - w);
             }
-            exp_tau(k, j, i, l) = f * exp(-0.5 * (kappa + kapp(k, j, i, l)) * length(j, i));
+          } else if (type(j, i) == RayInfo::RayType::POLOIDAL) {
+            if (ii > ibeg) {
+              f += exp_tau(k, jj, ii - 1, l) * (1 - w);
+              kappa += kapp(k, jj, ii - 1, l) * (1 - w);
+            }
           }
-        });
+          exp_tau(k, j, i, l) = f * exp(-0.5 * (kappa + kapp(k, j, i, l)) * length(j, i));
+        }
+      });
   }
 
   elapsedTime += timer.seconds();
@@ -554,6 +557,7 @@ void SphericalShortChar::compute_heating_rate() {
   IdefixArray4D<double> exp_tau = this->exp_tau;
   IdefixArray4D<double> heating = this->irradiationHeating;
   int num_species = this->num_species;
+  int num_bands = this->num_bands;
 
   // Step 1:
   //   Compute the heating rate from div-F.
@@ -604,8 +608,7 @@ void SphericalShortChar::compute_heating_rate() {
   const real u_opac = unit_opacity;
   const real u_flux = unit_luminosity / pow(idfx::units.GetLength(), 2);
 
-  idefix_for(
-      "FixIrradiationHeating", 0, num_species, kbeg, kend, jbeg, jend, ibeg, iend,
+  idefix_for("FixIrradiationHeating", 0, num_species, kbeg, kend, jbeg, jend, ibeg, iend,
       KOKKOS_LAMBDA(int s, int k, int j, int i) {
         double hc[2][2] = {{0, 0}, {0, 0}};
         for (int l = 0; l < num_bands; l++) {
@@ -616,10 +619,10 @@ void SphericalShortChar::compute_heating_rate() {
           hc[1][1] += F0[l] * exp_tau(k, j + 1, i + 1, l) * kappa(s, l) / u_opac;
         }
         double hmin, hmax;
-        hmin = std::min(hc[0][0], std::min(hc[0][1], std::min(hc[1][0], hc[1][1])));
-        hmax = std::max(hc[0][0], std::max(hc[0][1], std::max(hc[1][0], hc[1][1])));
+        hmin = min(hc[0][0], min(hc[0][1], min(hc[1][0], hc[1][1])));
+        hmax = max(hc[0][0], max(hc[0][1], max(hc[1][0], hc[1][1])));
 
-        heating(s, k, j, i) = std::max(hmin, std::min(hmax, heating(s, k, j, i))) / u_flux;
+        heating(s, k, j, i) = max(hmin, min(hmax, heating(s, k, j, i))) / u_flux;
       });
 
   // Add the heating to the total energy if we don't have FLD.
@@ -648,16 +651,17 @@ void SphericalShortChar::GetBoundaryFlux(int dir, int side, IdefixArray2D<real> 
 
     IdefixArray1D<double> F0 = this->radiation_field;
     IdefixArray4D<double> exp_tau = this->exp_tau;
+    int num_bands = this->num_bands;
 
-    idefix_for(
-        "IrradBoundaryFlux", kbeg, kend, jbeg, jend, KOKKOS_LAMBDA(int k, int j) {
+    idefix_for("IrradBoundaryFlux", kbeg, kend, jbeg, jend, 
+      KOKKOS_LAMBDA(int k, int j) {
           double cm = cos(the[j]), cp = cos(the[j + 1]);
           double wR = (2 * cm + cp) / (3 * (cm + cp));
 
           flux(k, j) = 0;
           for (int l = 0; l < num_bands; l++) {
             double FR = exp_tau(k, j + 1, ibeg, l) * wR + exp_tau(k, j, ibeg, l) * (1 - wR);
-            flux(k, j) -= F0[l] * std::max(FR * (cm + cp) / 2, 0.0) / u_flux;
+            flux(k, j) -= F0[l] * max(FR * (cm + cp) / 2, 0.0) / u_flux;
           }
         });
     return;
@@ -725,7 +729,7 @@ void SphericalShortChar::ShowConfig() {
   Irradiation::ShowConfig();
 }
 
-void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int species) {
+void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int s) {
   idfx::RegionWrapper region("SphericalShortChar::ComputeRadiationPressureSourceTerm");
 
   IdefixArray4D<real> heating = this->irradiationHeating;
@@ -734,33 +738,25 @@ void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int specie
 
   IdefixArray1D<double> th = data->x[JDIR];
 
-  if (species == 0) {
-    IdefixArray4D<real> Uc = data->hydro->Uc;
-
-    idefix_for(
-        "IrradiationPressureSource", data->beg[KDIR], data->end[KDIR], data->beg[JDIR],
-        data->end[JDIR], data->beg[IDIR], data->end[IDIR],
-
-        KOKKOS_LAMBDA(int k, int j, int i) {
-          EXPAND(
-              Uc(VX1, k, j, i) += -cos(th[j]) * heating(0, k, j, i) * Uc(RHO, k, j, i) * dt_over_c;
-              ,
-              Uc(VX1, k, j, i) += +sin(th[j]) * heating(0, k, j, i) * Uc(RHO, k, j, i) * dt_over_c;
-              , ;)
-        });
-  } else {
-    IdefixArray4D<real> Uc = data->dust[species - 1]->Uc;
-
-    idefix_for(
-        "DustPressureSource", data->beg[KDIR], data->end[KDIR], data->beg[JDIR], data->end[JDIR],
-        data->beg[IDIR], data->end[IDIR],
-
-        KOKKOS_LAMBDA(int k, int j, int i) {
-          EXPAND(Uc(VX1, k, j, i) +=
-                 -cos(th[j]) * heating(species, k, j, i) * Uc(RHO, k, j, i) * dt_over_c;
-                 , Uc(VX1, k, j, i) +=
-                   +sin(th[j]) * heating(species, k, j, i) * Uc(RHO, k, j, i) * dt_over_c;
-                 , ;)
-        });
+  IdefixArray4D<real> Uc, Vc;
+  if (s == 0) {
+    Uc = data->hydro->Uc;
+    Vc = data->hydro->Vc;
   }
+  else {
+    Uc = data->dust[s - 1]->Uc;
+    Vc = data->dust[s - 1]->Vc;
+  }
+  
+  idefix_for("IrradiationPressureSource", 
+                data->beg[KDIR], data->end[KDIR], 
+                data->beg[JDIR], data->end[JDIR], 
+                data->beg[IDIR], data->end[IDIR],
+    KOKKOS_LAMBDA(int k, int j, int i) {
+      EXPAND(
+          Uc(VX1, k, j, i) += -cos(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
+          Uc(VX2, k, j, i) += +sin(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
+          ;
+      )
+  });
 }

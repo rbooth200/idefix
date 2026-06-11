@@ -362,7 +362,7 @@ void FluxLimitedDiffusion::Init(Input& input, DataBlock* datain) {
   auto Erad = this->Erad;
   auto rhs = this->rhs;
   auto P = this->precond;
-  int num_species = this->num_species;
+  auto nu = this->nu;
 
   bool havePreconditioner = this->havePreconditioner;
   idefix_for(
@@ -891,8 +891,6 @@ void FluxLimitedDiffusion::FillMatrixTransportTerms() {
     rvalue[dir] = this->rvalue[dir];
   }
 
-  int num_species = this->num_species;
-
   idefix_for(
       "FiniteDifference", kbeg, kend, jbeg, jend, ibeg, iend, KOKKOS_LAMBDA(int k, int j, int i) {
         D_EXPAND(real h1; , real h2; , real h3;)
@@ -1085,6 +1083,7 @@ void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int spec
   IdefixArray3D<real> nu = this->nu;  // diffusivity
   IdefixArray4D<real> Uc = data->hydro->Uc;
   IdefixArray4D<real> Vc = data->hydro->Uc;
+  IdefixArray3D<real> Erad = this->Erad;
 
   if (species > 0) {
     Uc = data->dust[species - 1]->Uc;
@@ -1100,24 +1099,24 @@ void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int spec
 #endif
   )
 
-  real dt_over_code_c = 0.5 * dt / (this->unit_opacity * code_c);
+  real dt_over_c = 0.5 * dt / (this->unit_opacity * code_c);
 
-  idefix_for(
-      "FLDRadPressure", kbeg, kend, jbeg, jend, ibeg, iend, KOKKOS_LAMBDA(int k, int j, int i) {
-        D_EXPAND(real h1; , real h2; , real h3;)
+  idefix_for("FLDRadPressure", kbeg, kend, jbeg, jend, ibeg, iend, 
+    KOKKOS_LAMBDA(int k, int j, int i) {
+      D_EXPAND(real h1; , real h2; , real h3;)
 #if GEOMETRY == CARTESIAN
-        D_EXPAND(h1 = 1.; , h2 = 1.; , h3 = 1.;)
+      D_EXPAND(h1 = 1.; , h2 = 1.; , h3 = 1.;)
 #elif GEOMETRY == POLAR
       D_EXPAND(h1 = 1.; , h2 = x1(i); , h3 = 1.;)
 #else
       D_EXPAND(h1 = 1.; , h2 = x1(i); , h3 = x1(i) * sinth(j);)
 #endif
 
-        D_EXPAND(real flux1m; , real flux2m; , real flux3m;)
-        D_EXPAND(real flux1p; , real flux2p; , real flux3p;)
+      D_EXPAND(real flux1m; , real flux2m; , real flux3m;)
+      D_EXPAND(real flux1p; , real flux2p; , real flux3p;)
 
 #ifndef SECOND_ORDER_FLUXES
-        D_EXPAND(
+      D_EXPAND(
             const real nu1m = lageval1(x1(i - 1), x1(i), nu(k, j, i - 1), nu(k, j, i), x1l(i));
             const real nu1p = lageval1(x1(i), x1(i + 1), nu(k, j, i), nu(k, j, i + 1), x1r(i));
             flux1m =
@@ -1157,13 +1156,12 @@ void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int spec
       )
 #endif
 
-        D_EXPAND(Uc(VX1, k, j, i) +=
-                 dt_over_code_c * (flux1m + flux1p) * Vc(RHO, k, j, i) * kappaR(k, j, i);
-                 , Uc(VX2, k, j, i) +=
-                   dt_over_code_c * (flux2m + flux2p) * Vc(RHO, k, j, i) * kappaR(k, j, i);
-                 , Uc(VX3, k, j, i) +=
-                   dt_over_code_c * (flux3m + flux3p) * Vc(RHO, k, j, i) * kappaR(k, j, i);)
-      });
+      D_EXPAND(
+        Uc(VX1, k, j, i) += dt_over_c * (flux1m + flux1p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
+        Uc(VX2, k, j, i) += dt_over_c * (flux2m + flux2p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
+        Uc(VX3, k, j, i) += dt_over_c * (flux3m + flux3p) * Vc(RHO, k, j, i) * kappaR(k, j, i);
+      )
+  });
 }
 
 TwoTemperatureFLD::TwoTemperatureFLD(Input& input, DataBlock* datain)
@@ -1187,7 +1185,6 @@ void TwoTemperatureFLD::Init(Input& input, DataBlock* datain) {
   auto radX = this->radX;
   auto radY = this->radY;
   int num_species = this->num_species;
-  bool havePreconditioner = this->havePreconditioner;
 
   idefix_for(
       "InitRadiationArrays", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],

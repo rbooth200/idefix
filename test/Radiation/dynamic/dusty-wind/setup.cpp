@@ -34,6 +34,8 @@ TidalPotential tidal_potential(0,0,1);
 
 void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {
 
+  TidalPotential potential = tidal_potential;
+
   idefix_for("ComputePotential", 0, data.np_tot[KDIR],
                                  0, data.np_tot[JDIR],
                                  0, data.np_tot[IDIR],
@@ -42,7 +44,7 @@ void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<
       real ypos = x(i) * sin(y(j)) ;// * sin(z(k));
       real zpos = 0; //x(i) * sin(y(j)) * cos(z(k));
 
-      phiP(k,j,i) = tidal_potential(xpos, ypos, zpos);
+      phiP(k,j,i) = potential(xpos, ypos, zpos);
   });
 
 }
@@ -126,6 +128,8 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
   IdefixArray4D<real> Dust = data.dust[0]->Vc;
   auto gammaDrag = data.dust[0]->drag->gammaDrag;
 
+  Condensible condense = silicate;
+
   idefix_for("ApplyCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR], 0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i)  {
       real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu;
@@ -133,17 +137,16 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
       // Save total density and momentum
       real rho_t = Gas(RHO, k,j,i) + Dust(RHO, k,j,i);
-      real mt1, mt2, mt3;
       EXPAND(
-        mt1 = Dust(RHO, k,j,i)*Dust(VX1, k,j,i) + Gas(RHO, k,j,i)*Gas(VX1, k,j,i); ,
-        mt2 = Dust(RHO, k,j,i)*Dust(VX2, k,j,i) + Gas(RHO, k,j,i)*Gas(VX2, k,j,i); ,
-        mt3 = Dust(RHO, k,j,i)*Dust(VX3, k,j,i) + Gas(RHO, k,j,i)*Gas(VX3, k,j,i);
+        real mt1 = Dust(RHO, k,j,i)*Dust(VX1, k,j,i) + Gas(RHO, k,j,i)*Gas(VX1, k,j,i); ,
+        real mt2 = Dust(RHO, k,j,i)*Dust(VX2, k,j,i) + Gas(RHO, k,j,i)*Gas(VX2, k,j,i); ,
+        real mt3 = Dust(RHO, k,j,i)*Dust(VX3, k,j,i) + Gas(RHO, k,j,i)*Gas(VX3, k,j,i);
       );
 
       // Equilibrium vapour density
-      real rho_v = silicate.rho_vap(T_d*u_temp) * sqrt(T_g/T_d) / u_den;
+      real rho_v = condense.rho_vap(T_d*u_temp) * sqrt(T_g/T_d) / u_den;
 
-      real K = 0.75 * gammaDrag.GetGamma(k,j,i) * silicate.P_stick * dt;
+      real K = 0.75 * gammaDrag.GetGamma(k,j,i) * condense.P_stick * dt;
       real rho_p = rho_t - rho_v;
 
 
@@ -171,11 +174,10 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
       // Update the velocities
       real f = exp(- K * (rho_g + rho_d*rho_v/rho_g));
 
-      real dv1, dv2, dv3;
       EXPAND(
-        dv1 = f*(Dust(VX1, k,j,i) - Gas(VX1, k,j,i)); ,
-        dv2 = f*(Dust(VX2, k,j,i) - Gas(VX2, k,j,i)); ,
-        dv3 = f*(Dust(VX3, k,j,i) - Gas(VX3, k,j,i));
+        real dv1 = f*(Dust(VX1, k,j,i) - Gas(VX1, k,j,i)); ,
+        real dv2 = f*(Dust(VX2, k,j,i) - Gas(VX2, k,j,i)); ,
+        real dv3 = f*(Dust(VX3, k,j,i) - Gas(VX3, k,j,i));
       );
       EXPAND(
         Dust(VX1, k,j,i) = (mt1 + rho_g*dv1)/rho_t; ,
@@ -195,19 +197,20 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
     int ibeg = data.beg[IDIR];
     IdefixArray3D<real> Ax1 = data.A[IDIR];
     IdefixArray3D<real> dV = data.dV;
+    IdefixArray2D<real> Tsurf = T_surf;
     real k0 = sqrt(8/M_PI);
 
     idefix_for("SurfaceCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR],
       KOKKOS_LAMBDA (int k, int j)  {
         real T_g = Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg) * mu;
-        real T_s = T_surf(k, j);
+        real T_s = Tsurf(k, j);
 
         real v_t = k0 * sqrt(Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg));
 
         // Equilibrium vapour density
-        real rho_v = silicate.rho_vap(T_s*u_temp) * sqrt(T_g/T_s) / u_den;
+        real rho_v = condense.rho_vap(T_s*u_temp) * sqrt(T_g/T_s) / u_den;
 
-        real K = v_t * silicate.P_stick * Ax1(k,j,ibeg) / dV(k,j,ibeg);
+        real K = v_t * condense.P_stick * Ax1(k,j,ibeg) / dV(k,j,ibeg);
         real x = K*dt;
 
         // Compute the new gas density.
@@ -277,16 +280,19 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
   auto Er = data.radiation->Erad;
 
   const int i = data.beg[IDIR];
-
+  
+  IdefixArray2D<real> Tsurf = T_surf;
+  IdefixArray2D<real> Fsurf = F_surf;
+  real Csurf = C_surf;
 
   idefix_for("SurfaceTemp", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR],
     KOKKOS_LAMBDA (int k, int j)  {
       // Note - currently assumes F << cE_rad
-      real X = 0.25*code_cdt*code_aR*pow(T_surf(k, j), 3);
-      real Z = C_surf + 4*X;
-      real u_0 = C_surf*T_surf(k, j) + 3*X*T_surf(k, j) + 0.25*code_cdt*Er(k,j,i) - dt*F_surf(k,j);
+      real X = 0.25*code_cdt*code_aR*pow(Tsurf(k, j), 3);
+      real Z = Csurf + 4*X;
+      real u_0 = Csurf*Tsurf(k, j) + 3*X*Tsurf(k, j) + 0.25*code_cdt*Er(k,j,i) - dt*Fsurf(k,j);
 
-      T_surf(k, j) = u_0 / Z;
+      Tsurf(k, j) = u_0 / Z;
   });
 
   // Do dust condensation/evaporation
