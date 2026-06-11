@@ -54,7 +54,7 @@ void DustOpacity::evaluate_opacity(int num_wle_bins, IdefixArray1D<real> wle_mic
 
        if (beta != 1) x = pow(x, beta);
 
-       kappa(spec, i) = k0 * min(1., x);
+       kappa(spec, i) = k0 * Kokkos::min(1., x);
     });
 }
 
