@@ -1,14 +1,14 @@
 /* class Condensible
  *
  * Represents the thermodynamic properties of a condensible species.
- * 
+ *
  * Parameters:
  *   mass   : mass of a single monomer of condensate (in amu)
  *   Lsub   : Specific latent heat of sublimation (erg / g)
- *   P0     : Vapor pressure coefficient 
+ *   P0     : Vapor pressure coefficient
  *   P_cond : Condensation probability, fraction of collisions that 'stick'
- * 
- *  Note: 
+ *
+ *  Note:
  *    P_vap(T) = P0 * exp( - Lsub*mass/(Rgas*T))
  */
 class Condensible {
@@ -18,7 +18,7 @@ class Condensible {
     { } ;
 
     KOKKOS_INLINE_FUNCTION
-    double P_vap(double T) const {       
+    double P_vap(double T) const {
         return _P0 * exp(- Lsub*mass / (Rgas*T)) ;
     }
     KOKKOS_INLINE_FUNCTION
@@ -39,9 +39,9 @@ class Condensible {
  *
  * Simple class for holding the local properties of the radiation field
  * and the respective opacities of the two species.
- * 
+ *
  *  Notes:
- *     flux_star is the stellar radiation field 
+ *     flux_star is the stellar radiation field
  *     J_thermal is the local thermal radiation field
  *     f_band is the fraction of thermal energy radiated into the band.
  */
@@ -63,12 +63,12 @@ struct RadiationProperties {
         for (int b=0; b < num_stellar; b++) {
 
             double fac = 1 ;
-            double tau = dr * 
+            double tau = dr *
                 (rho[0]*kappa_star[b][0] + rho[1]*kappa_star[b][1]) ;
             if (tau > 0) {
                 fac = -std::expm1(-tau) / tau ;
             }
-            
+
             S[0] += flux_star[b] * fac * rho[0]*kappa_star[b][0] ;
             S[1] += flux_star[b] * fac * rho[1]*kappa_star[b][1] ;
         }
@@ -78,7 +78,7 @@ struct RadiationProperties {
 
     std::array<double, 2> compute_specific_thermal_heating() const {
         std::array<double,2> S = {0, 0} ;
-        
+
         int num_thermal = J_thermal.size() ;
         for (int b=0; b < num_thermal; b++) {
             S[0] += 4*pi * J_thermal[b] * kappa_thermal[b][0] ;
@@ -89,9 +89,9 @@ struct RadiationProperties {
     }
 
     std::array<double, 2> compute_kappa_thermal() const {
-        
+
         std::array<double,2> kappa = {0, 0} ;
-        
+
         int num_thermal = J_thermal.size() ;
         for (int b=0; b < num_thermal; b++) {
             kappa[0] += f_band[b][0] * kappa_thermal[b][0] ;
@@ -109,7 +109,7 @@ struct RadiationProperties {
         int num_stellar = flux_star.size() ;
         for (int b=0; b < num_stellar; b++)
             S += flux_star[b] ;
-    
+
         int num_thermal = J_thermal.size() ;
         for (int b=0; b < num_thermal; b++)
             S += pi*J_thermal[b] ;
@@ -124,7 +124,7 @@ struct RadiationProperties {
         int num_stellar = flux_star.size() ;
         for (int b=0; b < num_stellar; b++)
             S[0] += flux_star[b] ;
-    
+
         int num_thermal = J_thermal.size() ;
         for (int b=0; b < num_thermal; b++)
             S[1] += pi*J_thermal[b] ;
@@ -150,7 +150,7 @@ struct RadiationProperties {
 /* class SingleGrainCondensation
  *
  * A model for dust condensation where the dust grains are assumed to have
- * a single pre-specified size. 
+ * a single pre-specified size.
  */
 class SingleGrainCondensation {
   public:
@@ -162,7 +162,7 @@ class SingleGrainCondensation {
      : _cond(cond), _mu_gas(mu_gas), _C_v(C_gas), _C_l(C_l),
        _grain_size(grain_size), _grain_density(grain_density),
        _area(3/(grain_density*grain_size)),
-       _use_radiation(false) 
+       _use_radiation(false)
     { } ;
 
     void set_state(arr_t rho, arr_t T, arr_t v, RadiationProperties rad,
@@ -217,24 +217,24 @@ class SingleGrainCondensation {
 
         double cond = _cond.P_stick * _area * rho[1] * Pgas / std::sqrt(2*pi*(Rgas/_mu_gas)*T[0]) ;
         double evap = _cond.P_stick * _area * rho[1] * Pv   / std::sqrt(2*pi*(Rgas/_mu_gas)*T[1]) ;
-        
+
         // Compute change in kinetic energy
-        double dEk_dt = 
+        double dEk_dt =
             0.5*(rho[0]*v[0]*v[0] - _rho0[0]*_v0[0]*_v0[0] +
                  rho[1]*v[1]*v[1] - _rho0[1]*_v0[1]*_v0[1]) / (_dt+1e-300) ;
 
         // Term due to change in density ( - drho/dt * C * T0):
         arr_t rho_term = {
             - (evap - cond) * _C_v * _T0[0],
-            - (cond - evap) * _C_l * _T0[1] 
+            - (cond - evap) * _C_l * _T0[1]
         } ;
 
         return {
-            rho_term[0] + _C_v*(evap*T[1] - cond*T[0]) - dEk_dt, 
-            rho_term[1] + _C_v*(cond*T[0] - evap*T[1]) + _cond.Lsub * (cond - evap) 
+            rho_term[0] + _C_v*(evap*T[1] - cond*T[0]) - dEk_dt,
+            rho_term[1] + _C_v*(cond*T[0] - evap*T[1]) + _cond.Lsub * (cond - evap)
         } ;
     }
-    
+
     double operator()(double rho_l) const {
         arr_t rho, T, v ;
         std::tie(rho, T, v) = update_T_rho_v(rho_l) ;
@@ -244,24 +244,24 @@ class SingleGrainCondensation {
 
         double cond = _cond.P_stick * _area * rho[1] * Pgas / std::sqrt(2*pi*(Rgas/_mu_gas)*T[0]) ;
         double evap = _cond.P_stick * _area * rho[1] * Pv   / std::sqrt(2*pi*(Rgas/_mu_gas)*T[1]) ;
-        
+
         return  (rho_l - _rho0[1]) - (cond - evap)*_dt ;
     }
 
-       
+
     std::tuple<arr_t, arr_t, arr_t> update_T_rho_v(double rho_l) const {
 
 
         // Update densities (and compute density change) using guess provided
         double drho = rho_l - _rho0[1] ;
         arr_t rho = { _rho0[0] + _rho0[1] - rho_l, rho_l } ;
-        
+
 
         // Compute condensation rate / collision rate:
         double Pgas = rho[0] * ((Rgas/_mu_gas) * _T0[0]) ;
         double cs = std::sqrt((Rgas/_mu_gas) * _T0[0]) ;
 
-        double cond_rate = _cond.P_stick * _area * rho[1] * 
+        double cond_rate = _cond.P_stick * _area * rho[1] *
             Pgas / std::sqrt(2*pi * (Rgas/_mu_gas) * _T0[0]) ;
 
         double coll_rate = std::sqrt(8/(9*pi)) * _area * rho[1] * rho[0] * (Rgas/_mu_gas) * cs ;
@@ -274,9 +274,9 @@ class SingleGrainCondensation {
         if (E < 0) {
            C -= E ; E = 0 ;
         }
- 
+
         double fac = 1 / (E + rho[1]) ;
-        
+
         arr_t v ;
         v[0] = (_rho0[0]*_v0[0] + _rho0[1]*_v0[1]*E*fac) / (rho[0] + rho[1]*C*fac) ;
         v[1] = (_rho0[1]*_v0[1] +  v[0]*C) * fac  ;
@@ -303,7 +303,7 @@ class SingleGrainCondensation {
             u[1] += heat[1] * _dt ;
         }
 
-        
+
         //    Solve for T
         C = (coll_rate + cond_rate*_C_v)*_dt ;
         E = (coll_rate + cond_rate*_C_v)*_dt - drho*_C_v ;
@@ -318,7 +318,7 @@ class SingleGrainCondensation {
         arr_t T ;
         T[0] = (u[0] + u[1]*E*fac) / (rho[0]*_Ctot[0] + rho[1]*_Ctot[1]*C*fac);
         T[1] = (u[1] + T[0]*C)*fac ;
-        
+
         return std::make_tuple(rho, T, v) ;
     }
 
@@ -336,7 +336,7 @@ class SingleGrainCondensation {
             double f ;
             while((f = this->operator()(rho_max)) < 0) {
                 rho_min = rho_max ;
-                if (count < 4) 
+                if (count < 4)
                     rho_max *= fac ;
                 else
                     rho_max *= 10 ;
@@ -366,7 +366,7 @@ class SingleGrainCondensation {
             double f ;
             while((f = this->operator()(rho_min)) > 0) {
                 rho_max = rho_min ;
-                if (count < 4) 
+                if (count < 4)
                     rho_min /= fac ;
                 else
                     rho_min *= 0.1 ;
@@ -407,7 +407,7 @@ class SingleGrainCondensation {
 /* class SurfaceCondensation
  *
  * A model for dust condensation / evaporation from a planet's surface.
- * 
+ *
  * Notes:
  * - The layer_mass = density * thickness, controls the effective thermal
  *   inertia of the planet.
@@ -424,7 +424,7 @@ class SurfaceCondensation {
        _m_layer(layer_mass), _A_V(Area_Vol)
     { } ;
 
-    void set_state(double T_surf, double T_gas, double P_gas, 
+    void set_state(double T_surf, double T_gas, double P_gas,
                    RadiationProperties rad, double L_rain, double dt) {
 
         _Pgas = P_gas ;
@@ -435,17 +435,17 @@ class SurfaceCondensation {
         _dt = dt ;
 
         _rad = rad ;
-        _Lrain = L_rain; 
+        _Lrain = L_rain;
 
         // Compute the internal energy and total heat capacity
-        
+
         _u0 = _m_layer*_C_l*_T0 + dt*(_rad.surface_irradiation() + _Lrain) ;
 
         _Ctot = _m_layer*_C_l ;
     }
 
     double mass_flux(double T_surf) const {
-        
+
         double Pv = _cond.P_vap(T_surf) ;
         double evap = _cond.P_stick * Pv / std::sqrt(2*pi*Rgas/_mu_gas*T_surf) ;
 
@@ -454,7 +454,7 @@ class SurfaceCondensation {
 
         return evap - cond ;
     }
- 
+
     std::string print_surface_cooling(double T_surf) const {
         std::array<double,2 > S = _rad.surface_irradiation_terms() ;
 
@@ -463,16 +463,16 @@ class SurfaceCondensation {
         out << "Surface Heating/Cooling Terms:\n"
             << "\tStellar irradiation: "  << S[0] << "\n"
             << "\tNet Thermal Heating: "  << S[1] << "\n"
-            << "\tRainout: " << _Lrain << "\n" 
-            << "\tRadiative cooling: " << sigma_rad*std::pow(T_surf, 4) << "\n" 
-            << "\tLatent Heat: " << _cond.Lsub*mass_flux(T_surf) << "\n" 
+            << "\tRainout: " << _Lrain << "\n"
+            << "\tRadiative cooling: " << sigma_rad*std::pow(T_surf, 4) << "\n"
+            << "\tLatent Heat: " << _cond.Lsub*mass_flux(T_surf) << "\n"
             << "\tGas Heating: " << gas_heating_rate(T_surf) ;
 
         return out.str() ;
     }
 
     double gas_heating_rate(double T_surf) const {
-        
+
         double Pv = _cond.P_vap(T_surf) ;
         double evap = _cond.P_stick * Pv / std::sqrt(2*pi*Rgas/_mu_gas*T_surf) ;
 
@@ -481,7 +481,7 @@ class SurfaceCondensation {
 
         return _C_v*(evap*T_surf - cond*T_gas) ;
     }
-    
+
     double operator()(double T_surf) const {
 
         double Pv = _cond.P_vap(T_surf) ;
@@ -499,7 +499,7 @@ class SurfaceCondensation {
     std::tuple<double, double> bracket_solution() const {
         double T_min, T_max ;
 
-        double fac = 2; 
+        double fac = 2;
 
         T_min = _T0 ;
         if (this->operator()(T_min) < 0) {
@@ -522,9 +522,9 @@ class SurfaceCondensation {
     }
 
   private:
-    // Solve for the gas temperature / pressure given the surface 
+    // Solve for the gas temperature / pressure given the surface
     //  temperature
-    std::tuple<double,double> 
+    std::tuple<double,double>
     compute_gas_T_and_cond_rate(double T_surf, double evap_rate) const {
 
         double term1 = _dt*_A_V*evap_rate/_rho_gas ;

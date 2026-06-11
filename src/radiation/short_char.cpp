@@ -11,6 +11,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "dataBlock.hpp"
 #include "fluid.hpp"
@@ -295,7 +296,7 @@ void SphericalShortChar::_build_ray_weights() {
   IdefixArray2D<double> start = rays->start;
   IdefixArray2D<double> weights = rays->weights;
 
-  idefix_for("BuildRayWeights", jbeg, jend + 1, ibeg, iend + 1, 
+  idefix_for("BuildRayWeights", jbeg, jend + 1, ibeg, iend + 1,
       KOKKOS_LAMBDA(int j, int i) {
         if (type(j, i) == RayInfo::RayType::RADIAL) {
           double th = start(j, i);
@@ -458,7 +459,7 @@ void SphericalShortChar::compute_optical_depths() {
           rho_all(s, k, j, i) = Vc(RHO, k, j, i);
         });
 
-      idefix_for("BoundaryOpacity", kbeg, kend, jbeg, jend, 
+      idefix_for("BoundaryOpacity", kbeg, kend, jbeg, jend,
         KOKKOS_LAMBDA(int k, int j) {
             for (int l = 0; l < num_bands; l++) {
               if (s == 0) _tau_boundary(k, j, l) = 0;
@@ -489,7 +490,7 @@ void SphericalShortChar::compute_optical_depths() {
 
     IdefixArray4D<double> exp_tau = this->exp_tau;
 
-    idefix_for("ComputeTau", kbeg, kend, cbeg, cend, 0, num_bands, 
+    idefix_for("ComputeTau", kbeg, kend, cbeg, cend, 0, num_bands,
       KOKKOS_LAMBDA(int k, int cell, int l) {
         int i = cells_in_order(cell, 0);
         int j = cells_in_order(cell, 1);
@@ -619,10 +620,10 @@ void SphericalShortChar::compute_heating_rate() {
           hc[1][1] += F0[l] * exp_tau(k, j + 1, i + 1, l) * kappa(s, l) / u_opac;
         }
         double hmin, hmax;
-        hmin = min(hc[0][0], min(hc[0][1], min(hc[1][0], hc[1][1])));
-        hmax = max(hc[0][0], max(hc[0][1], max(hc[1][0], hc[1][1])));
+        hmin = Kokkos::min(hc[0][0], Kokkos::min(hc[0][1], Kokkos::min(hc[1][0], hc[1][1])));
+        hmax = Kokkos::max(hc[0][0], Kokkos::max(hc[0][1], Kokkos::max(hc[1][0], hc[1][1])));
 
-        heating(s, k, j, i) = max(hmin, min(hmax, heating(s, k, j, i))) / u_flux;
+        heating(s, k, j, i) = Kokkos::max(hmin, Kokkos::min(hmax, heating(s, k, j, i))) / u_flux;
       });
 
   // Add the heating to the total energy if we don't have FLD.
@@ -653,7 +654,7 @@ void SphericalShortChar::GetBoundaryFlux(int dir, int side, IdefixArray2D<real> 
     IdefixArray4D<double> exp_tau = this->exp_tau;
     int num_bands = this->num_bands;
 
-    idefix_for("IrradBoundaryFlux", kbeg, kend, jbeg, jend, 
+    idefix_for("IrradBoundaryFlux", kbeg, kend, jbeg, jend,
       KOKKOS_LAMBDA(int k, int j) {
           double cm = cos(the[j]), cp = cos(the[j + 1]);
           double wR = (2 * cm + cp) / (3 * (cm + cp));
@@ -661,7 +662,7 @@ void SphericalShortChar::GetBoundaryFlux(int dir, int side, IdefixArray2D<real> 
           flux(k, j) = 0;
           for (int l = 0; l < num_bands; l++) {
             double FR = exp_tau(k, j + 1, ibeg, l) * wR + exp_tau(k, j, ibeg, l) * (1 - wR);
-            flux(k, j) -= F0[l] * max(FR * (cm + cp) / 2, 0.0) / u_flux;
+            flux(k, j) -= F0[l] * Kokkos::max(FR * (cm + cp) / 2, 0.0) / u_flux;
           }
         });
     return;
@@ -747,16 +748,16 @@ void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int s) {
     Uc = data->dust[s - 1]->Uc;
     Vc = data->dust[s - 1]->Vc;
   }
-  
-  idefix_for("IrradiationPressureSource", 
-                data->beg[KDIR], data->end[KDIR], 
-                data->beg[JDIR], data->end[JDIR], 
+
+  idefix_for("IrradiationPressureSource",
+                data->beg[KDIR], data->end[KDIR],
+                data->beg[JDIR], data->end[JDIR],
                 data->beg[IDIR], data->end[IDIR],
     KOKKOS_LAMBDA(int k, int j, int i) {
       EXPAND(
           Uc(VX1, k, j, i) += -cos(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
           Uc(VX2, k, j, i) += +sin(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
-          ;
+          {}
       )
   });
 }
