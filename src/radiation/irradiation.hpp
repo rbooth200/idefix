@@ -70,9 +70,8 @@ class Irradiation {
 
   double elapsedTime;  // time spent solving radiation
 
- protected:
   virtual void _ComputeRadiationPressureSourceTerm(real dt, int species) = 0;
-
+ protected:
   DataBlock* data;
 
   IdefixArray2D<real> kappa;
@@ -115,8 +114,7 @@ class LongCharIrradiation : public Irradiation {
   MPI_Comm RadialComm;  // Radial communicator
 #endif
 
- protected:
-  void _ComputeRadiationPressureSourceTerm(real dt, int species);
+ void _ComputeRadiationPressureSourceTerm(real dt, int species);
 
  private:
   IdefixArray4D<real> column;
@@ -162,12 +160,12 @@ class SphericalShortChar : public Irradiation {
 
   void ShowConfig();
 
- protected:
   void _ComputeRadiationPressureSourceTerm(real dt, int species);
 
+ public:
+  void _build_ray_weights();
  private:
   void _build_rays(HostRayInfo&);
-  void _build_ray_weights();
   void _sort_ray_walk(HostRayInfo&);
   int _get_cell_order(int i, int j, HostRayInfo&);
 
@@ -175,7 +173,7 @@ class SphericalShortChar : public Irradiation {
   std::unique_ptr<RayInfo> rays;
 
   // Info for ordering the ray-walk
-  IdefixArray1D<int> _cells_per_order;
+  std::vector<int> _cells_per_order;
   IdefixArray2D<int> _cells_in_order;
   int _max_order;
 

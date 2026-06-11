@@ -164,7 +164,6 @@ class FluxLimitedDiffusion {
   // some units
   real unit_opacity;
 
- private:
   void _ComputeRadiationPressureSourceTerm(real dt, int species);
 
  protected:

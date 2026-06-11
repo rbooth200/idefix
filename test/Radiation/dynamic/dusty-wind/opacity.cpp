@@ -20,8 +20,11 @@ void StellarProperties::compute_radiation_field(int num_bands, IdefixArray1D<rea
   real x0 = _planck.WienParameter(1,_T);
 
   IdefixHostArray1D<real> host = Kokkos::create_mirror_view(_flux);
+  IdefixHostArray1D<real> wle_host = Kokkos::create_mirror_view(wle_micron);
+  Kokkos::deep_copy(wle_host, wle_micron);
+
   for (int i = 0; i < num_bands; i++) {
-    host(i) = F0 * (_planck(x0/wle_micron(i)) - _planck(x0/wle_micron(i+1)));
+    host(i) = F0 * (_planck(x0/wle_host(i)) - _planck(x0/wle_host(i+1)));
   }
 
   Kokkos::deep_copy(_flux,host);
@@ -51,7 +54,7 @@ void DustOpacity::evaluate_opacity(int num_wle_bins, IdefixArray1D<real> wle_mic
 
        if (beta != 1) x = pow(x, beta);
 
-       kappa(spec, i) = k0 * fmin(1., x);
+       kappa(spec, i) = k0 * min(1., x);
     });
 }
 
@@ -107,8 +110,8 @@ void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray3D<real> kP,
 GasOpacity::GasOpacity() {
 
     /*Copy critical data to Device*/
-    wle_micron = IdefixArray1D<real> ("KappaGas_Planck", num_wle_bins+1);
-    kappa_2000 = IdefixArray1D<real> ("KappaGas_Rosseland", num_wle_bins);
+    wle_micron = IdefixArray1D<real> ("KappaGas_wle_micron", num_wle_bins+1);
+    kappa_2000 = IdefixArray1D<real> ("KappaGas_k2000", num_wle_bins);
 
     logKpl  = IdefixArray1D<real> ("KappaGas_Planck", num_pl);
     logKRoss = IdefixArray1D<real> ("KappaGas_Rosseland", num_pl);
@@ -127,7 +130,6 @@ GasOpacity::GasOpacity() {
     fill_array(num_wle_bins, kappa_2000, _kappa_2000);
     fill_array(num_pl, logKpl, _logKpl);
     fill_array(num_pl, logKRoss, _logKRoss);
-
 }
 
 void GasOpacity::evaluate_opacity(IdefixArray2D<real> kappa) {
@@ -201,9 +203,6 @@ void GasOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray3D<real> kP, 
       else {
         int idx = static_cast<int>(f);
         f -= idx;
-
-        if (idx < 0 || idx >= num_pl - 1)
-          idfx::cout << idx << " " << f << logT << "\n";
 
         logKP = logKpl(idx) * (1 - f) + f * logKpl(idx + 1);
         logKR = logKRoss(idx) * (1 - f) + f * logKRoss(idx + 1);

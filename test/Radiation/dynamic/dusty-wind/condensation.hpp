@@ -17,10 +17,11 @@ class Condensible {
      : mass(mass_), Lsub(Lsub_), P_stick(P_cond_), _P0(P0_)
     { } ;
 
+    KOKKOS_INLINE_FUNCTION
     double P_vap(double T) const {       
         return _P0 * exp(- Lsub*mass / (Rgas*T)) ;
     }
-
+    KOKKOS_INLINE_FUNCTION
     double rho_vap(double T) const {
         return P_vap(T) * mass / (Rgas*T) ;
     }
