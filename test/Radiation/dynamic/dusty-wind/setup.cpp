@@ -32,6 +32,8 @@ std::unique_ptr<StellarProperties> star;
 
 TidalPotential tidal_potential(0,0,1);
 
+static double depletion_factor = 1.0;
+
 void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {
 
   TidalPotential potential = tidal_potential;
@@ -130,6 +132,9 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
   Condensible condense = silicate;
 
+  int jbeg = data.beg[JDIR];
+  real dust_depletion_factor = depletion_factor;
+
   idefix_for("ApplyCondensation", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR], 0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i)  {
       real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu;
@@ -189,6 +194,11 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
         Gas(VX2, k,j,i) = Dust(VX2, k,j,i) - dv2; ,
         Gas(VX3, k,j,i) = Dust(VX3, k,j,i) - dv3;
       );
+
+      // Remove dust pileup on axis:
+      if (j <= jbeg) {
+        Dust(RHO, k,j,i) *= dust_depletion_factor;
+      }
 
   });
 
@@ -280,7 +290,7 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
   auto Er = data.radiation->Erad;
 
   const int i = data.beg[IDIR];
-  
+
   IdefixArray2D<real> Tsurf = T_surf;
   IdefixArray2D<real> Fsurf = F_surf;
   real Csurf = C_surf;
@@ -398,6 +408,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   data.EnrollUserStepLast(UpdateSurface);
   output.EnrollAnalysis(&Analysis);
 
+  depletion_factor = input.GetOrSet<real>("Setup", "axis_depletion_factor", 0, 1.0);
 }
 
 
