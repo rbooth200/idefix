@@ -15,6 +15,8 @@ void MyRadiationBoundary(DataBlock &data, int dir, BoundarySide side, real t, Id
 void Analysis(DataBlock & data);
 
 static bool surface_condensation = true;
+static bool radiation_pressure = false;
+static double depletion_factor = 1.0;
 
 static real R_Hill, R_Bondi, R_p;
 static real T0, d2g, C_surf;
@@ -32,7 +34,6 @@ std::unique_ptr<StellarProperties> star;
 
 TidalPotential tidal_potential(0,0,1);
 
-static double depletion_factor = 1.0;
 
 void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {
 
@@ -308,6 +309,15 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
   // Do dust condensation/evaporation
   ApplyCondensation(data, t, dt);
 
+  if (radiation_pressure) {
+    data.irradiation->ComputeRadiationPressureSourceTerm<DefaultPhysics, true>(data.hydro.get(), t, dt);
+    data.radiation->ComputeRadiationPressureSourceTerm<DefaultPhysics, true>(data.hydro.get(), t, dt);
+
+    for (int s=0; s < data.dust.size(); s++) {
+      data.irradiation->ComputeRadiationPressureSourceTerm<DustPhysics, true>(data.dust[s].get(), t, dt);
+      data.radiation->ComputeRadiationPressureSourceTerm<DustPhysics, true>(data.dust[s].get(), t, dt);
+    }
+  }
 }
 
 void MeanOpacity(DataBlock* data, int species,IdefixArray3D<real> kappaP, IdefixArray3D<real> kappaR) {
@@ -393,10 +403,14 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   data.hydro->EnrollFluxBoundary(&ZeroFluxBoundary<DefaultPhysics,0>);
   data.dust[0]->EnrollFluxBoundary(&ZeroFluxBoundary<DustPhysics,-1>);
 
-  if (input.GetOrSet<bool>("Setup", "radiation_pressure", 0, true)) {
+
+  radiation_pressure = input.GetOrSet<bool>("Setup", "radiation_pressure", 0, false);
+  /*
+  if (radiation_pressure) {
     data.hydro->EnrollUserSourceTerm(&RadiationPressureSourceTerm<DefaultPhysics>);
     data.dust[0]->EnrollUserSourceTerm(&RadiationPressureSourceTerm<DustPhysics>);
   }
+  */
 
   data.gravity->EnrollPotential(&MyPotential);
 

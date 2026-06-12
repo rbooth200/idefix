@@ -1054,7 +1054,8 @@ D_EXPAND(
       });
 }
 
-void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int species) {
+void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int species,
+                                                               bool update_Vc) {
   idfx::RegionWrapper region("FLD::ComputeRadiationPressureSourceTerm");
 
   // Step 1: Get the Rosseland opacity:
@@ -1101,7 +1102,7 @@ void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int spec
 
   real dt_over_c = 0.5 * dt / (this->unit_opacity * code_c);
 
-  idefix_for("FLDRadPressure", kbeg, kend, jbeg, jend, ibeg, iend, 
+  idefix_for("FLDRadPressure", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA(int k, int j, int i) {
       D_EXPAND(real h1; , real h2; , real h3;)
 #if GEOMETRY == CARTESIAN
@@ -1156,11 +1157,20 @@ void FluxLimitedDiffusion::_ComputeRadiationPressureSourceTerm(real dt, int spec
       )
 #endif
 
-      D_EXPAND(
-        Uc(VX1, k, j, i) += dt_over_c * (flux1m + flux1p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
-        Uc(VX2, k, j, i) += dt_over_c * (flux2m + flux2p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
-        Uc(VX3, k, j, i) += dt_over_c * (flux3m + flux3p) * Vc(RHO, k, j, i) * kappaR(k, j, i);
-      )
+      if (update_Vc) {
+        D_EXPAND(
+          Vc(VX1, k, j, i) += dt_over_c * (flux1m + flux1p) * kappaR(k, j, i); ,
+          Vc(VX2, k, j, i) += dt_over_c * (flux2m + flux2p) * kappaR(k, j, i); ,
+          Vc(VX3, k, j, i) += dt_over_c * (flux3m + flux3p) * kappaR(k, j, i);
+        )
+      }
+      else {
+        D_EXPAND(
+          Uc(VX1, k, j, i) += dt_over_c * (flux1m + flux1p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
+          Uc(VX2, k, j, i) += dt_over_c * (flux2m + flux2p) * Vc(RHO, k, j, i) * kappaR(k, j, i); ,
+          Uc(VX3, k, j, i) += dt_over_c * (flux3m + flux3p) * Vc(RHO, k, j, i) * kappaR(k, j, i);
+        )
+    }
   });
 }
 

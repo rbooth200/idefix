@@ -337,34 +337,29 @@ void LongCharIrradiation::ShowConfig() {
   Irradiation::ShowConfig();
 }
 
-void LongCharIrradiation::_ComputeRadiationPressureSourceTerm(real dt, int species) {
+void LongCharIrradiation::_ComputeRadiationPressureSourceTerm(real dt, int species,
+                                                              bool update_Vc) {
   idfx::RegionWrapper region("LongCharIrradiation::ComputeRadiationPressureSourceTerm");
 
   IdefixArray4D<real> heating = this->irradiationHeating;
   real code_c = idfx::units.c / idfx::units.GetVelocity();
   real dt_over_c = dt / code_c;
 
-  if (species == 0) {
-    IdefixArray4D<real> Uc = data->hydro->Uc;
-    IdefixArray4D<real> Vc = data->hydro->Vc;
-
-    idefix_for(
-        "IrradiationPressureSource", data->beg[KDIR], data->end[KDIR], data->beg[JDIR],
-        data->end[JDIR], data->beg[IDIR], data->end[IDIR],
-
-        KOKKOS_LAMBDA(int k, int j, int i) {
-          Uc(VX1, k, j, i) += heating(0, k, j, i) * Vc(RHO, k, j, i) * dt_over_c;
-        });
-  } else {
-    IdefixArray4D<real> Uc = data->dust[species - 1]->Uc;
-    IdefixArray4D<real> Vc = data->dust[species - 1]->Vc;
-
-    idefix_for(
-        "DustPressureSource", data->beg[KDIR], data->end[KDIR], data->beg[JDIR], data->end[JDIR],
-        data->beg[IDIR], data->end[IDIR],
-
-        KOKKOS_LAMBDA(int k, int j, int i) {
-          Uc(VX1, k, j, i) += heating(species, k, j, i) * Vc(RHO, k, j, i) * dt_over_c;
-        });
+  IdefixArray4D<real> Uc = data->hydro->Uc;
+  IdefixArray4D<real> Vc = data->hydro->Vc;
+  if (species > 0) {
+    Uc = data->dust[species - 1]->Uc;
+    Vc = data->dust[species - 1]->Vc;
   }
+
+  idefix_for(
+      "IrradiationPressureSource", data->beg[KDIR], data->end[KDIR], data->beg[JDIR],
+      data->end[JDIR], data->beg[IDIR], data->end[IDIR],
+
+      KOKKOS_LAMBDA(int k, int j, int i) {
+        if (update_Vc)
+          Vc(VX1, k, j, i) += heating(species, k, j, i) * dt_over_c;
+        else
+          Uc(VX1, k, j, i) += heating(species, k, j, i) * Vc(RHO, k, j, i) * dt_over_c;
+      });
 }

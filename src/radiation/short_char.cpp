@@ -730,7 +730,7 @@ void SphericalShortChar::ShowConfig() {
   Irradiation::ShowConfig();
 }
 
-void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int s) {
+void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int s, bool update_Vc) {
   idfx::RegionWrapper region("SphericalShortChar::ComputeRadiationPressureSourceTerm");
 
   IdefixArray4D<real> heating = this->irradiationHeating;
@@ -754,10 +754,19 @@ void SphericalShortChar::_ComputeRadiationPressureSourceTerm(real dt, int s) {
                 data->beg[JDIR], data->end[JDIR],
                 data->beg[IDIR], data->end[IDIR],
     KOKKOS_LAMBDA(int k, int j, int i) {
-      EXPAND(
+      if (update_Vc) {
+          EXPAND(
+            Vc(VX1, k, j, i) += -cos(th[j]) * heating(s, k, j, i) * dt_over_c; ,
+            Vc(VX2, k, j, i) += +sin(th[j]) * heating(s, k, j, i) * dt_over_c; ,
+            {}
+          )
+        }
+      else {
+        EXPAND(
           Uc(VX1, k, j, i) += -cos(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
           Uc(VX2, k, j, i) += +sin(th[j]) * heating(s, k, j, i) * Vc(RHO, k, j, i) * dt_over_c; ,
           {}
-      )
+        )
+      }
   });
 }

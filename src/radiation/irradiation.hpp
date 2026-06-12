@@ -46,12 +46,12 @@ class Irradiation {
   virtual void ComputeIrradiation() = 0;
   virtual void GetBoundaryFlux(int dir, int side, IdefixArray2D<real>) = 0;
 
-  template <typename Phys>
+  template <typename Phys, bool update_Vc = false>
   void ComputeRadiationPressureSourceTerm(Fluid<Phys>* fluid, real t, real dt) {
     if (!Phys::dust) {
-      _ComputeRadiationPressureSourceTerm(dt, 0);
+      _ComputeRadiationPressureSourceTerm(dt, 0, update_Vc);
     } else {
-      _ComputeRadiationPressureSourceTerm(dt, fluid->instanceNumber + 1);
+      _ComputeRadiationPressureSourceTerm(dt, fluid->instanceNumber + 1, update_Vc);
     }
   }
 
@@ -70,7 +70,8 @@ class Irradiation {
 
   double elapsedTime;  // time spent solving radiation
 
-  virtual void _ComputeRadiationPressureSourceTerm(real dt, int species) = 0;
+  virtual void _ComputeRadiationPressureSourceTerm(real dt, int species, bool update_Vc) = 0;
+
  protected:
   DataBlock* data;
 
@@ -114,7 +115,7 @@ class LongCharIrradiation : public Irradiation {
   MPI_Comm RadialComm;  // Radial communicator
 #endif
 
- void _ComputeRadiationPressureSourceTerm(real dt, int species);
+  void _ComputeRadiationPressureSourceTerm(real dt, int species, bool update_Vc);
 
  private:
   IdefixArray4D<real> column;
@@ -160,10 +161,11 @@ class SphericalShortChar : public Irradiation {
 
   void ShowConfig();
 
-  void _ComputeRadiationPressureSourceTerm(real dt, int species);
+  void _ComputeRadiationPressureSourceTerm(real dt, int species, bool update_Vc);
 
  public:
   void _build_ray_weights();
+
  private:
   void _build_rays(HostRayInfo&);
   void _sort_ray_walk(HostRayInfo&);

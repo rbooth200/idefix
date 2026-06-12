@@ -123,12 +123,12 @@ class FluxLimitedDiffusion {
   virtual void UpdatePressure() = 0;  // Update pressure with new radiation field
   void SolveSystem();                 // Solve Radiation equation
 
-  template <class Phys>
+  template <class Phys, bool update_Vc = false>
   void ComputeRadiationPressureSourceTerm(Fluid<Phys>* fluid, real t, real dt) {
     if (!Phys::dust) {
-      _ComputeRadiationPressureSourceTerm(dt, 0);
+      _ComputeRadiationPressureSourceTerm(dt, 0, update_Vc);
     } else {
-      _ComputeRadiationPressureSourceTerm(dt, fluid->instanceNumber + 1);
+      _ComputeRadiationPressureSourceTerm(dt, fluid->instanceNumber + 1, update_Vc);
     }
   }
 
@@ -164,7 +164,7 @@ class FluxLimitedDiffusion {
   // some units
   real unit_opacity;
 
-  void _ComputeRadiationPressureSourceTerm(real dt, int species);
+  void _ComputeRadiationPressureSourceTerm(real dt, int species, bool update_Vc);
 
  protected:
   DataBlock* data;              // My parent data object
