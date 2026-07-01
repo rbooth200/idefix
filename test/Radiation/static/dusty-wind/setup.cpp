@@ -6,7 +6,7 @@
 #include "potential.hpp"
 
 
-/* TODO: 
+/* TODO:
  - Radiation Pressure
  - Coriolis Force
 */
@@ -31,7 +31,7 @@ std::unique_ptr<StellarProperties> star;
 
 TidalPotential tidal_potential(0,0,1);
 
-void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {    
+void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {
 
   idefix_for("ComputePotential", 0, data.np_tot[KDIR],
                                  0, data.np_tot[JDIR],
@@ -55,12 +55,12 @@ void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
   if(dir==IDIR && side == BoundarySide::left) {
     hydro->boundary->BoundaryFor("UserDefBoundary", dir, side,
       KOKKOS_LAMBDA (int k, int j, int i) {
-          
+
         const int iref = 2*(ighost) - i - 1;
         const int sign = Phys::dust? 1 : -1;
 
         for (int n=0; n<Phys::nvar; n++){
-          if(n == (VX1+dir)) 
+          if(n == (VX1+dir))
             Vc(n,k,j,i) = sign * Vc(n,k,j,iref);
           else
             Vc(n,k,j,i) = Vc(n,k,j,iref);
@@ -91,14 +91,14 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
     KOKKOS_LAMBDA (int k, int j, int i)  {
       real T_g = Gas(PRS,k,j,i) / Gas(RHO, k,j,i) * mu * u_temp;
       real T_d = Dust(TRD,k,j,i) * u_temp;
-      
+
       // Save total density and momentum
       real rho_t = Gas(RHO, k,j,i) + Dust(RHO, k,j,i);
       real mt1, mt2, mt3;
       EXPAND(
         mt1 = Dust(RHO, k,j,i)*Dust(VX1, k,j,i) + Gas(RHO, k,j,i)*Gas(VX1, k,j,i); ,
         mt2 = Dust(RHO, k,j,i)*Dust(VX2, k,j,i) + Gas(RHO, k,j,i)*Gas(VX2, k,j,i); ,
-        mt3 = Dust(RHO, k,j,i)*Dust(VX3, k,j,i) + Gas(RHO, k,j,i)*Gas(VX3, k,j,i);  
+        mt3 = Dust(RHO, k,j,i)*Dust(VX3, k,j,i) + Gas(RHO, k,j,i)*Gas(VX3, k,j,i);
       );
 
       // Equilibrium vapour density
@@ -124,7 +124,7 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
 
       // Update density/temperature
       Dust(RHO, k,j,i) = rho_d;
-      Gas(RHO, k,j,i)  = rho_g; 
+      Gas(RHO, k,j,i)  = rho_g;
 
       Gas(PRS, k,j,i)  = rho_g * T_g / (mu * u_temp);
 
@@ -141,7 +141,7 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
       EXPAND(
         Dust(VX1, k,j,i) = (mt1 + rho_g*dv1)/rho_t; ,
         Dust(VX2, k,j,i) = (mt2 + rho_g*dv2)/rho_t; ,
-        Dust(VX3, k,j,i) = (mt3 + rho_g*dv3)/rho_t; 
+        Dust(VX3, k,j,i) = (mt3 + rho_g*dv3)/rho_t;
       );
       EXPAND(
         Gas(VX1, k,j,i) = Dust(VX1, k,j,i) - dv1; ,
@@ -149,7 +149,7 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
         Gas(VX3, k,j,i) = Dust(VX3, k,j,i) - dv3;
       );
 
-  }); 
+  });
 
   // Apply condensation at the surface
   if (surface_condensation) {
@@ -164,18 +164,18 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
         real T_s = T_surf(k, j);
 
         real v_t = k0 * sqrt(Gas(PRS,k,j,ibeg) / Gas(RHO, k,j,ibeg));
-        
+
         // Equilibrium vapour density
         real rho_v = silicate.rho_vap(T_s) * sqrt(T_g/T_s) / u_den;
 
         real K = v_t * silicate.P_stick * Ax1(k,j,ibeg) / dV(k,j,ibeg);
-        real x = K*dt; 
+        real x = K*dt;
 
         // Compute the new gas density.
         Gas(RHO, k,j,ibeg) = Gas(RHO, k,j,ibeg)*exp(-x) - rho_v*expm1(-x);
 
         // For now let's leave the temperature and velocity at the boundary.
-    }); 
+    });
   }
 }
 
@@ -185,19 +185,19 @@ void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
   real R0 = data->xend[0];
   IdefixArray4D<real> Vc = data->hydro->Vc;
   int i = data->end[0];
-  
+
   int num_species = data->dust.size()+1 ;
-  
+
   real u_opac = data->radiation->unit_opacity;
 
   idefix_for("SetBoundaryColumn", 0, num_species, 0, data->np_tot[KDIR], 0, data->np_tot[JDIR],
   KOKKOS_LAMBDA (int s, int k, int j)  {
-    if (s == 0) 
+    if (s == 0)
       // Use non-zero because strong Fe lines produce high T.
-      column(s, k, j) = 1e-4 * u_opac; 
+      column(s, k, j) = 1e-4 * u_opac;
     else
       column(s, k, j) = 0;
-  }); 
+  });
 }
 
 
@@ -207,7 +207,7 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
  if (data.haveIrradiation)
     data.irradiation->GetBoundaryFlux(IDIR, left, F_surf);
 
- 
+
   const real code_aR = data.radiation->code_aR;
   const real code_cdt = data.radiation->code_c*dt;
   auto Er = data.radiation->Erad;
@@ -219,11 +219,11 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
     KOKKOS_LAMBDA (int k, int j)  {
       // Note - currently assumes F << cE_rad
       real X = 0.25*code_cdt*code_aR*pow(T_surf(k, j), 3);
-      real Z = C_surf + 4*X;     
+      real Z = C_surf + 4*X;
       real u_0 = C_surf*T_surf(k, j) + 3*X*T_surf(k, j) + 0.25*code_cdt*Er(k,j,i) - dt*F_surf(k,j);
 
       T_surf(k, j) = u_0 / Z;
-  });     
+  });
 
   // Do dust condensation/evaporation
   ApplyCondensation(data, t, dt);
@@ -244,7 +244,7 @@ void IrradiationOpacity(DataBlock* data, IdefixArray2D<real> kappa) {
 
   // Check the shape matches:
   if (data->irradiation->num_bands != gas_opac->num_wle_bins)
-    IDEFIX_ERROR("Number of bands expected by irradiation does not match gas opacity");    
+    IDEFIX_ERROR("Number of bands expected by irradiation does not match gas opacity");
 
   // Set the gas opacity
   gas_opac->evaluate_opacity(kappa);
@@ -262,7 +262,7 @@ void RadiationField(DataBlock* data, IdefixArray1D<real> flux) {
 
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
-  
+
   real k0 = 30 / data.radiation->unit_opacity;
   // Store parameters
   rho0 = input.Get<real>("Setup", "tau0", 0) / k0;
@@ -281,7 +281,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   real a_p = input.Get<real>("Setup", "a_p", 0) * idfx::units.au / idfx::units.GetLength();
   real GMstar = GM * input.Get<real>("Setup", "Mstar", 0) * idfx::units.M_sun;
   real GMplanet = GM * input.GetOrSet<real>("Setup", "M_p", 0, 0) * idfx::units.M_earth;
-  
+
   real R_p = grid.xbeg[0];
   idfx::cout << "Hill Radius: " << pow(GMplanet/(3*GMstar), 1./3.) * a_p / R_p << " R_p\n";
 
@@ -317,7 +317,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
 
@@ -357,7 +357,7 @@ void Setup::InitFlow(DataBlock &data) {
                 d.Vc(VX3,k,j,i) = 0.0;
 
                 d.Vc(PRS, k,j,i) = rho * T0 / mu;
-                d.Erad(k,j,i) = aR * pow(T0, 4);        
+                d.Erad(k,j,i) = aR * pow(T0, 4);
             }
         }
     }
@@ -400,7 +400,7 @@ Setup::~Setup() {
 
 void Analysis(DataBlock & data) {
     std::ofstream f(surf_file);
-    
+
     f << "# j k T_surf F_surf" << "\n";
 
     IdefixHostArray2D<real> T_host = Kokkos::create_mirror_view(T_surf);

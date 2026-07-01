@@ -26,17 +26,17 @@ void WriteState(DataBlock& data, const real t, const real dt) {
   DataBlockHost d(data);
   d.SyncFromDevice();
 
-  f << t << " " 
+  f << t << " "
     << d.Vc(RHO,k,j,i) << " " << d.dustVc[0](RHO,k,j,i) << " "
     << mu * d.Vc(PRS,k,j,i) / d.Vc(RHO,k,j,i) << " "
     << d.dustVc[0](TRD,k,j,i) << " "
     << pow(d.Erad(k,j,i)/ aR, 0.25) << "\n" ;
-     
+
 }
 
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
-  
+
   Tg =  input.Get<real>("Setup", "Tgas", 0) / idfx::units.GetKelvin();
   Td =  input.Get<real>("Setup", "Tdust", 0) / idfx::units.GetKelvin();
   Tr =  input.Get<real>("Setup", "Trad", 0) / idfx::units.GetKelvin();
@@ -61,10 +61,10 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
-    
+
     for(int k = 0; k < d.np_tot[KDIR] ; k++) {
         for(int j = 0; j < d.np_tot[JDIR] ; j++) {
             for(int i = 0; i < d.np_tot[IDIR] ; i++) {
@@ -76,7 +76,7 @@ void Setup::InitFlow(DataBlock &data) {
                 d.Vc(VX1,k,j,i) = 0.0;
 
                 d.Vc(PRS, k,j,i) = rho * Tg / mu ;
-                d.Erad(k,j,i) = aR * pow(Tr, 4) ;        
+                d.Erad(k,j,i) = aR * pow(Tr, 4) ;
             }
         }
     }

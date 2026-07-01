@@ -139,7 +139,7 @@ void TimeIntegrator::ShowLog(DataBlock &data) {
       idfx::cout << " | " << std::setw(col_width) << "SG iterations";
       idfx::cout << " | " << std::setw(col_width) << "SG error";
       idfx::cout << " | " << std::setw(col_width) << "SG overhead (%)";
-    }    
+    }
     if(data.haveRadiation) {
       idfx::cout << " | " << std::setw(col_width) << "FLD iterations";
       idfx::cout << " | " << std::setw(col_width) << "FLD error";
@@ -380,7 +380,7 @@ void TimeIntegrator::Cycle(DataBlock &data) {
   // END STAGES LOOP                             //
   /////////////////////////////////////////////////
    // solve radiation
-  
+
   if(data.haveIrradiation) data.irradiation->ComputeIrradiation() ;
   if(data.haveRadiation) data.radiation->SolveSystem();
 

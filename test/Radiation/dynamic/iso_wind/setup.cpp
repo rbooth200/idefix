@@ -17,7 +17,7 @@ void SoundSpeed(DataBlock &data, const real t, IdefixArray3D<real> &cs) {
   real cs_val = sqrt(T0 / mu) ;
 
   auto th = data.x[JDIR];
-  
+
   idefix_for("cs", 0, data.np_tot[KDIR], 0, data.np_tot[JDIR], 0, data.np_tot[IDIR],
     KOKKOS_LAMBDA (int k, int j, int i) {
       cs(k,j,i) = cs_val  * (1 + amp*cos(th(j))) / (1+amp) ;
@@ -25,7 +25,7 @@ void SoundSpeed(DataBlock &data, const real t, IdefixArray3D<real> &cs) {
 }
 
 
-void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {    
+void MyPotential(DataBlock& data, real t, IdefixArray1D<real> &x, IdefixArray1D<real> &y, IdefixArray1D<real> &z, IdefixArray3D<real> &phiP) {
 
   idefix_for("ComputePotential", 0, data.np_tot[KDIR],
                                  0, data.np_tot[JDIR],
@@ -52,7 +52,7 @@ void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
   if(dir==IDIR && side == BoundarySide::left) {
     hydro->boundary->BoundaryFor("UserDefBoundary", dir, side,
       KOKKOS_LAMBDA (int k, int j, int i) {
-          
+
         const int iref = ighost;
 
         for (int n=0; n<Phys::nvar; n++){
@@ -60,7 +60,7 @@ void UserBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
             real f = pow((1 + amp*cos(th(j))) / (1+amp), -2);
             Vc(n,k,j,i) = f * exp(R_Bondi * (1.0/R(i) - 1.0/R_p));
           }
-          else if(n == (VX1+dir)) 
+          else if(n == (VX1+dir))
             Vc(n,k,j,i) = fabs(Vc(n,k,j,iref));
           else
             Vc(n,k,j,i) = Vc(n,k,j,iref);
@@ -82,14 +82,14 @@ void FluxBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
 
 
   if(dir==IDIR && side == BoundarySide::left) {
-    int i = data->beg[IDIR];  
+    int i = data->beg[IDIR];
     auto th = data->x[JDIR];
     IdefixArray3D<real> A = data->A[dir];
-  
+
     idefix_for("UserFluxBoundary", data->beg[KDIR],data->end[KDIR],
                                    data->beg[JDIR],data->end[JDIR],
       KOKKOS_LAMBDA (int k, int j) {
-          
+
         if (Flux(RHO, k,j,i) < ZERO_F) {
           for (int n=0; n<Phys::nvar; n++){
               Flux(n,k,j,i) = 0;
@@ -104,7 +104,7 @@ void FluxBoundary(Fluid<Phys> *hydro, int dir, BoundarySide side, real t) {
 
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
-  
+
   // Store parameters
   T0 =  input.Get<real>("Setup", "T0", 0) / idfx::units.GetKelvin();
   mu = input.Get<real>("Setup", "mu", 0) ;
@@ -115,7 +115,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   real a_p = input.Get<real>("Setup", "a_p", 0) * idfx::units.au / idfx::units.GetLength();
   real GMstar = GM * input.Get<real>("Setup", "Mstar", 0) * idfx::units.M_sun;
   real GMplanet = GM * input.GetOrSet<real>("Setup", "M_p", 0, 0) * idfx::units.M_earth;
-  
+
   R_p = grid.xbeg[0];
   R_Hill = pow(GMplanet/(3*GMstar), 1./3.) * a_p ;
   R_Bondi = GMplanet * mu / T0 ;

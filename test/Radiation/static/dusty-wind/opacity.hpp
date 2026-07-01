@@ -38,10 +38,10 @@ class DustOpacity {
 class GasOpacity {
  public:
   static const int num_wle_bins = 41;
-  IdefixArray1D<real> wle_micron, kappa_2000; 
+  IdefixArray1D<real> wle_micron, kappa_2000;
 
   GasOpacity();
-  
+
   void evaluate_opacity(IdefixArray2D<real> kappa);
   void evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, IdefixArray4D<real> kR);
 

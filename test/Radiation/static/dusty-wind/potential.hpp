@@ -12,7 +12,7 @@ class TidalPotential {
     real r_p = sqrt((x - _a_p)*(x - _a_p) + y*y + z*z);
 
     real x_COM  =  - _a_p * _GMstar / (_GMstar + _GMplanet);
-    
+
     real phi_s = - _GMstar / r_s;
     real phi_p = - _GMplanet / r_p;
     real phi_c = + 0.5 * _omega*_omega*( (x - x_COM)*(x - x_COM) + y*y );
@@ -21,7 +21,7 @@ class TidalPotential {
 
     return phi;
   }
-  
+
   real get_semi_major() const {
     return _a_p;
   }

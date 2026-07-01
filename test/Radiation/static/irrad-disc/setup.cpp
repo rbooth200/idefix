@@ -8,7 +8,7 @@ void MyRadiationBoundary(DataBlock &data, int dir, BoundarySide side, real t, Id
 
 void DiscColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
 
-    
+
     real R0 = data->xbeg[0] ;
     IdefixArray4D<real> Vc = data->hydro->Vc ;
     int i = data->beg[0] ;
@@ -16,7 +16,7 @@ void DiscColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
    idefix_for("SetBoundaryColumn", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR],
     KOKKOS_LAMBDA (int k, int j)  {
       column(0, k, j) = 3*R0*Vc(RHO, k,j,i) ;
-    }); 
+    });
 }
 
 // User-defined boundaries
@@ -80,11 +80,11 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
     const real Er0 = aR * pow(mu, 4);
-    
+
     for(int k = 0; k < d.np_tot[KDIR] ; k++) {
         for(int j = 0; j < d.np_tot[JDIR] ; j++) {
             for(int i = 0; i < d.np_tot[IDIR] ; i++) {
@@ -103,7 +103,7 @@ void Setup::InitFlow(DataBlock &data) {
                 d.Vc(VX3,k,j,i) = 0.0;
 
                 d.Vc(PRS, k,j,i) = rho * T / mu * (1 + 0.1*c_phi) ;
-                d.Erad(k,j,i) = aR * pow(T, 4) ;        
+                d.Erad(k,j,i) = aR * pow(T, 4) ;
             }
         }
     }

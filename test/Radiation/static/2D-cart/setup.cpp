@@ -79,7 +79,7 @@ void ResetQuantities(Hydro *hydro, const real t, const real dtin) {
     real gamma = hydro->eos->GetGamma();
     // If radiation is needed, update it
     // if(data->haveRadiation) data->radiation->SolveSystem();
-    
+
     IdefixArray4D<real> Vc = hydro->Vc;
     IdefixArray4D<real> Uc = hydro->Uc;
 
@@ -107,11 +107,11 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
     const real Er0 = aR * pow(mu, 4);
-    
+
     for(int k = 0; k < d.np_tot[KDIR] ; k++) {
         for(int j = 0; j < d.np_tot[JDIR] ; j++) {
             for(int i = 0; i < d.np_tot[IDIR] ; i++) {
@@ -126,7 +126,7 @@ void Setup::InitFlow(DataBlock &data) {
                 d.Erad(k,j,i) = Er0 * (1+x);
                 const real tmp = pow(d.Erad(k,j,i)/aR, 0.25);
                 d.Vc(PRS,k,j,i) = 1.0;// * tmp / mu;
-        
+
             }
         }
     }

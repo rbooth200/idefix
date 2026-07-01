@@ -46,7 +46,7 @@ void popRegion();
 
 class RegionWrapper {
  public:
-  RegionWrapper(const std::string& name) {
+  explicit RegionWrapper(const std::string& name) {
     pushRegion(name);
   }
   ~RegionWrapper() {

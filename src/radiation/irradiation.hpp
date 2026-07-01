@@ -5,13 +5,7 @@
 // Licensed under CeCILL 2.1 License, see COPYING for more information
 // ***********************************************************************************
 
-// ***********************************************************************************
-// Idefix MHD astrophysical code
-// Copyright(C) Geoffroy R. J. Lesur <geoffroy.lesur@univ-grenoble-alpes.fr>
-// and other code contributors
-// Licensed under CeCILL 2.1 License, see COPYING for more information
 // Module contributed by Alex Ziampras and Richard Booth.
-// ***********************************************************************************
 
 #ifndef RADIATION_IRRADIATION_HPP_
 #define RADIATION_IRRADIATION_HPP_

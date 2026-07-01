@@ -14,7 +14,7 @@
  *     P(x) = \frac{15}{\pi^4}\int_0^x \frac{t^3}{\exp(t) - 1} dt
  *
  */
-class PlanckIntegral { 
+class PlanckIntegral {
   public:
     PlanckIntegral()
       : _lgx0(std::log10(1e-6)), _dlgx(0.03125), Nmax(512)
@@ -33,9 +33,9 @@ class PlanckIntegral {
         _val = std::vector<double>(Nmax) ;
         _val[0] = _norm * x[0]*x[0]*x[0]/3;
         for (int i=1; i < Nmax; i++) {
-            _val[i] = _val[i-1] + 
+            _val[i] = _val[i-1] +
                 interp.integrate(std::pow(10, _lgx0 + _dlgx*(i-1)),
-    		  			         std::pow(10, _lgx0 + _dlgx*i));
+                                 std::pow(10, _lgx0 + _dlgx*i));
 
             _val[i-1] = std::log(_val[i-1]) ;
         }
@@ -53,12 +53,12 @@ class PlanckIntegral {
         double f = (lgx - _lgx0) / _dlgx ;
         int i = std::floor(f)  ;
         f -= i ;
-        
+
         if (i < 0)
-            return _norm * x*x*x / 3. ;   
+            return _norm * x*x*x / 3. ;
         else if (i >= Nmax-1)
             return (1 - std::exp(-x)*(6 + x*(6 + x*(3 + x)))) ;
-        else 
+        else
             return std::exp(_val[i]*(1-f) + _val[i+1]*f) ;
     }
 
@@ -74,7 +74,7 @@ private:
     }
     double _norm = 0.15398973382026507 ;
 
-      
+
     std::vector<double> _val ;
     double _lgx0, _dlgx ;
     int Nmax ;

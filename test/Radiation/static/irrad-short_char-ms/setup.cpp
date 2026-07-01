@@ -7,7 +7,7 @@ void Analysis(DataBlock & data) ;
 
 void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
 
-    
+
     real R0 = data->xbeg[0] ;
     IdefixArray4D<real> Vc = data->hydro->Vc ;
     int i = data->beg[0] ;
@@ -15,7 +15,7 @@ void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
    idefix_for("SetBoundaryColumn", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR],
     KOKKOS_LAMBDA (int k, int j)  {
       column(0, k, j) = 0 ;
-    }); 
+    });
 }
 
 // User-defined boundaries
@@ -35,7 +35,7 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
  if (data.haveIrradiation)
     data.irradiation->GetBoundaryFlux(IDIR, left, F_surf);
 
- 
+
   const real code_aR = data.radiation->code_aR;
   const real code_cdt = data.radiation->code_c*dt;
   auto Er = data.radiation->Erad;
@@ -47,15 +47,15 @@ void UpdateSurface(DataBlock& data, const real t, const real dt) {
     KOKKOS_LAMBDA (int k, int j)  {
       // Note - currently assumes F << cE_rad
       real X = 0.25*code_cdt*code_aR*pow(T_surf(k, j), 3);
-      real Z = C_surf + 4*X;     
+      real Z = C_surf + 4*X;
       real u_0 = C_surf*T_surf(k, j) + 3*X*T_surf(k, j) + 0.25*code_cdt*Er(k,j,i) - dt*F_surf(k,j);
 
       T_surf(k, j) = u_0 / Z ;
-  });     
+  });
 }
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
-  
+
   real k0 = input.Get<real>("Irradiation", "kappa", 2) / data.radiation->unit_opacity;
   // Store parameters
   rho0 = input.Get<real>("Setup", "tau0", 0) / k0 ;
@@ -81,7 +81,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
 
@@ -121,7 +121,7 @@ void Setup::InitFlow(DataBlock &data) {
                 d.Vc(VX3,k,j,i) = 0.0;
 
                 d.Vc(PRS, k,j,i) = rho * T0 / mu ;
-                d.Erad(k,j,i) = aR * pow(T0, 4) ;        
+                d.Erad(k,j,i) = aR * pow(T0, 4) ;
             }
         }
     }
@@ -159,7 +159,7 @@ Setup::~Setup() {
 
 void Analysis(DataBlock & data) {
     std::ofstream f(surf_file) ;
-    
+
     f << "# j k T_surf F_surf" << "\n";
 
     IdefixHostArray2D<real> T_host = Kokkos::create_mirror_view(T_surf) ;
