@@ -128,6 +128,7 @@ class DataBlock {
 
   DataBlock(Grid &, Input &);     ///< init from a Grid object
   explicit DataBlock(SubGrid *);           ///< init a minimal datablock for a subgrid
+  explicit DataBlock(CoarseGrid *);        ///< init a minimal datablock for a coarsegrid
 
   void ExtractSubdomain();        ///< initialise datablock sub-domain according to domain decomp.
   void MakeGeometry();            ///< Compute geometrical terms

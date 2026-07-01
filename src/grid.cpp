@@ -42,6 +42,42 @@ Grid::Grid(SubGrid * subgrid) {
   idfx::popRegion();
 }
 
+Grid::Grid(CoarseGrid * coarse_grid) {
+  idfx::pushRegion("Grid::Grid(CoarseGrid)");
+  // Copy data from parent
+  x = coarse_grid->parentGrid->x;
+  xr = coarse_grid->parentGrid->xr;
+  xl = coarse_grid->parentGrid->xl;
+  dx = coarse_grid->parentGrid->dx;
+
+  xbeg = coarse_grid->parentGrid->xbeg;
+  xend = coarse_grid->parentGrid->xend;
+
+  np_tot = coarse_grid->parentGrid->np_tot;
+  np_int = coarse_grid->parentGrid->np_int;
+
+  nghost = coarse_grid->parentGrid->nghost;
+
+  lbound = coarse_grid->lbound;
+  rbound = coarse_grid->rbound;
+
+  haveAxis = coarse_grid->parentGrid->haveAxis;
+  isRegularCartesian = coarse_grid->parentGrid->isRegularCartesian;
+
+  // Turn off coarsening for the coarsened grids (this refers to a separate treatment)
+  haveGridCoarsening = GridCoarsening::disabled;
+  coarseningDirection = {false, false, false};
+
+  nproc = coarse_grid->parentGrid->nproc;
+  xproc = coarse_grid->parentGrid->xproc;
+
+  // Now slice if along the chosen direction
+  CoarsenMe(coarse_grid);
+
+  idfx::popRegion();
+}
+
+
 Grid::Grid(Input &input) {
   idfx::pushRegion("Grid::Grid(Input)");
 
@@ -466,4 +502,89 @@ void Grid::SliceMe(SubGrid *subgrid) {
     nproc[dir] = 1;
     xproc[dir] = 0;
   #endif
+}
+
+void Grid::CoarsenMe(CoarseGrid *coarse_grid) {
+  // Coarsen this grid along the directions specified in coarse_grid
+  for(int dir = 0 ; dir < 3 ; dir++)
+    if(coarse_grid->coarsen[dir]) {
+      if ((np_tot[dir] % 2) != 0)
+        IDEFIX_ERROR("We can only coarsen directions with an even number of points.");
+
+      np_tot[dir] = 2*nghost[dir] + (np_tot[dir]-2*nghost[dir]-1)/2 + 1;
+      np_int[dir] = np_tot[dir] - 2*nghost[dir];
+
+      // Allocate the arrays
+      auto x = IdefixArray1D<real>("x", np_tot[dir]);
+      auto xr = IdefixArray1D<real>("xr", np_tot[dir]);
+      auto xl = IdefixArray1D<real>("xl", np_tot[dir]);
+      auto dx = IdefixArray1D<real>("dx", np_tot[dir]);
+
+      auto x_f = this->x[dir];
+      auto xr_f = this->xr[dir];
+      auto xl_f = this->xl[dir];
+      auto dx_f = this->dx[dir];
+
+      // Fill the interior of the grid
+      idefix_for("coarsen_grid_interior", nghost[dir], np_tot[dir] - nghost[dir],
+        KOKKOS_LAMBDA(int i) {
+          int i_f = 2*(i-nghost[dir]) + nghost[dir];
+          xr(i) = xr_f(i_f+1);
+          xl(i) = xl_f(i_f);
+          x(i) = xr_f(i_f);
+          dx(i) = dx_f(i_f) + dx_f(i_f+1);
+      });
+
+
+      // Fill the boundaries and the local start and end of the grid
+      int ngh = nghost[dir];
+      int ni_c = np_int[dir];
+      int ni_f = coarse_grid->parentGrid->np_int[dir];
+
+      bool isPeriodic = ((lbound[dir] == BoundaryType::periodic) &&
+                         (rbound[dir] == BoundaryType::periodic));
+      idefix_for("coarsen_grid_boundaries", 0, nghost[dir],
+        KOKKOS_LAMBDA(int i_gh) {
+          if (!isPeriodic) {
+            // Don't coarsen the boundaries
+            xl(i_gh) = xl_f(i_gh);
+            xr(i_gh) = xr_f(i_gh);
+            dx(i_gh) = dx_f(i_gh);
+            x(i_gh) = x_f(i_gh);
+
+            xl(i_gh + ni_c + ngh) = xl_f(i_gh + ni_f + ngh);
+            xr(i_gh + ni_c + ngh) = xr_f(i_gh + ni_f + ngh);
+            dx(i_gh + ni_c + ngh) = dx_f(i_gh + ni_f + ngh);
+            x(i_gh + ni_c + ngh) = x_f(i_gh + ni_f + ngh);
+          } else {
+            // Match the size of the cells for periodic boundaries
+            int i_c = ngh - i_gh - 1;
+
+            xr(i_c) = xl(i_c + 1);
+            dx(i_c) = dx(i_c + ni_c);
+            xl(i_c) = xr(i_c) - dx(i_c);
+            x(i_c) = 0.5*(xl(i_c) + xr(i_c));
+
+            i_c = ni_c + ngh + i_gh;
+
+            xl(i_c) = xr(i_c - 1);
+            dx(i_c) = dx(i_c - ni_c);
+            xr(i_c) = xl(i_c) + dx(i_c);
+            x(i_c) = 0.5*(xl(i_c) + xr(i_c));
+          }
+      });
+
+      // Replace the arrays in the current grid
+      this->x[dir] = x;
+      this->xr[dir] = xr;
+      this->xl[dir] = xl;
+      this->dx[dir] = dx;
+    }
+
+  // Copy the MPI communicators
+#ifdef WITH_MPI
+  CartComm = coarse_grid->parentGrid->CartComm;
+  if (haveAxis)
+    AxisComm = coarse_grid->parentGrid->AxisComm;
+#endif
 }

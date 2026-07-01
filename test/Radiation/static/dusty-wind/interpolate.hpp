@@ -82,7 +82,7 @@ class _PchipInterpolatorBase {
         value_type term = polynomial_integrate(start, x0 - _x[start]) ;
         for (int j = 0; j < dim; j++)
             result[j] = -term[j] ;
-        
+
         for (int i=start; i < end; i++) {
             term = polynomial_integrate(i, _x[i+1] - _x[i]) ;
             for (int j = 0; j < dim; j++)

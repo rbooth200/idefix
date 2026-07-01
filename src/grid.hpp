@@ -21,6 +21,7 @@
 /// it is recommended to use a GridHost instance from this Grid, and sync it.
 /////////////////////////////////////////////////////////////////////////////////////////////////
 class SubGrid;    // Forward class declaration
+class CoarseGrid;  // Forward class declaration
 
 class Grid {
  public:
@@ -58,10 +59,12 @@ class Grid {
   // Constructor
   explicit Grid(Input &);
   explicit Grid(SubGrid *);
+  explicit Grid(CoarseGrid *);
 
   void ShowConfig();
 
   void SliceMe(SubGrid *);       ///< Slice this grid according to the subgrid (internal function)
+  void CoarsenMe(CoarseGrid *);  ///< Coarsen according to the coarsegrid (internal function)
 
   Grid() = default;
 
@@ -117,6 +120,34 @@ class SubGrid {
   const int direction;
   real x0;   ///< Cell center coordinate of the slice/average
   int index; ///< index in parent grid of the slice/average
+};
+
+class CoarseGrid {
+ public:
+  CoarseGrid(Grid * grid, std::array<bool,3> coarsening):
+          parentGrid(grid), coarsen(coarsening) {
+    idfx::RegionWrapper region("CoarseGrid::CoarseGrid()");
+    lbound = parentGrid->lbound;
+    rbound = parentGrid->rbound;
+    this->grid = std::make_unique<Grid>(this);
+  }
+
+  CoarseGrid(Grid * grid, std::array<bool,3> coarsening,
+             std::array<BoundaryType,3> lbound, std::array<BoundaryType,3> rbound):
+          parentGrid(grid), coarsen(coarsening) {
+    idfx::RegionWrapper region("CoarseGrid::CoarseGrid()");
+    this->lbound = lbound;
+    this->rbound = rbound;
+    this->grid = std::make_unique<Grid>(this);
+  }
+
+
+  Grid *parentGrid;
+  std::unique_ptr<Grid> grid;
+
+  std::array<bool,3> coarsen;    ///< Directions in which the grid is coarsened.
+  std::array<BoundaryType,3> lbound;  ///< Whether the grid is periodic in each direction.
+  std::array<BoundaryType,3> rbound;  ///< Whether the grid is periodic in each direction.
 };
 
 #endif // GRID_HPP_

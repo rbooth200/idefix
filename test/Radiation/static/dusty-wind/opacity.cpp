@@ -6,11 +6,11 @@
 
 
 StellarProperties::StellarProperties(double Mstar, double Lstar, double Tstar, double a_p)
- : _M(Mstar), _L(Lstar), _T(Tstar), _a(a_p) 
+ : _M(Mstar), _L(Lstar), _T(Tstar), _a(a_p)
 { } ;
 
 void StellarProperties::compute_radiation_field(int num_bands, IdefixArray1D<real> wle_micron) {
-  this->num_bands = num_bands; 
+  this->num_bands = num_bands;
 
   this->_flux = IdefixArray1D<real> ("StellarPropertiesFlux", num_bands);
 
@@ -25,12 +25,12 @@ void StellarProperties::compute_radiation_field(int num_bands, IdefixArray1D<rea
   }
 
   Kokkos::deep_copy(_flux,host);
-} 
+}
 
 
 void StellarProperties::get_radiation_field(IdefixArray1D<real> flux_out) {
-  IdefixArray1D<real> my_flux = this->_flux ; 
-  
+  IdefixArray1D<real> my_flux = this->_flux ;
+
   idefix_for("GetStellarFlux", 0, num_bands,
     KOKKOS_LAMBDA (int i) {
       flux_out(i) = my_flux(i);
@@ -42,7 +42,7 @@ void StellarProperties::get_radiation_field(IdefixArray1D<real> flux_out) {
 
 void DustOpacity::evaluate_opacity(int num_wle_bins, IdefixArray1D<real> wle_micron, IdefixArray2D<real> kappa, int spec) {
 
-  real a = _a, k0 = _k0, beta = _beta; 
+  real a = _a, k0 = _k0, beta = _beta;
 
   idefix_for("KappaStarDust", 0, num_wle_bins,
     KOKKOS_LAMBDA (int i) {
@@ -50,7 +50,7 @@ void DustOpacity::evaluate_opacity(int num_wle_bins, IdefixArray1D<real> wle_mic
       double x = 1e4 * 2 * M_PI * a /l ;
 
        if (beta != 1) x = pow(x, beta);
- 
+
        kappa(spec, i) = k0 * fmin(1., x);
     });
 }
@@ -76,12 +76,12 @@ void DustOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP,
   else
     Vc = data->dust[spec-1]->Vc;
 
-  real T0 = _T0, k0 = _k0, beta = _beta; 
+  real T0 = _T0, k0 = _k0, beta = _beta;
 
   idefix_for("FillKappaDust", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
       real kappa;
-      real T ; 
+      real T ;
       if (spec == 0)
         T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
       else
@@ -109,11 +109,11 @@ GasOpacity::GasOpacity() {
 
 
     auto fill_array = [](int num_data, IdefixArray1D<real> arr, const double * data) {
-        
+
       IdefixHostArray1D<real> host = Kokkos::create_mirror_view(arr);
       for (int i = 0; i < num_data; i++)
         host(i) =  data[i];
-      
+
       Kokkos::deep_copy(arr,host);
     };
 
@@ -171,8 +171,8 @@ void GasOpacity::evaluate_mean_opacity(DataBlock* data, IdefixArray4D<real> kP, 
     KOKKOS_LAMBDA (int k, int j, int i) {
       real T = mu * u_Kelvin * Vc(PRS, k, j, i) / Vc(RHO, k, j, i);
       real logT = log(T);
-      
-      // Get array index: 
+
+      // Get array index:
       double logKP, logKR;
       if (logT <= logT0) {
         logKP = logKpl(0);

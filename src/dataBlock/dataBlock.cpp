@@ -285,6 +285,102 @@ DataBlock::DataBlock(SubGrid *subgrid) {
   idfx::popRegion();
 }
 
+
+/**
+ * @brief Construct a new Data Block for the coarse grid.
+ *
+ * @param coarse_grid : CoarseGrid from which the local datablock should be extracted.
+ */
+DataBlock::DataBlock(CoarseGrid *coarse_grid) {
+  idfx::pushRegion("DataBlock:DataBlock(CoarseGrid)");
+  this->mygrid = coarse_grid->grid.get();
+
+  // Make a local copy of the grid for future usage.
+  GridHost gridHost(*mygrid);
+  gridHost.SyncFromDevice();
+
+
+  // Get the number of points from the parent grid object
+  for(int dir = 0 ; dir < 3 ; dir++) {
+    nghost[dir] = mygrid->nghost[dir];
+    // Domain decomposition: decompose the full domain size in grid by the number of processes
+    // in that direction
+    np_int[dir] = mygrid->np_int[dir]/mygrid->nproc[dir];
+    np_tot[dir] = np_int[dir]+2*nghost[dir];
+
+    // Boundary conditions
+    if (mygrid->xproc[dir]==0) {
+      lbound[dir] = mygrid->lbound[dir];
+      if(lbound[dir]==axis) this->haveAxis = true;
+    } else {
+      lbound[dir] = internal;
+    }
+
+    if (mygrid->xproc[dir] == mygrid->nproc[dir]-1) {
+      rbound[dir] = mygrid->rbound[dir];
+      if(rbound[dir]==axis) this->haveAxis = true;
+    } else {
+      rbound[dir] = internal;
+    }
+
+    beg[dir] = mygrid->nghost[dir];
+    end[dir] = mygrid->nghost[dir]+np_int[dir];
+
+    // Where does this datablock starts and end in the grid?
+    // This assumes even distribution of points between procs
+    gbeg[dir] = mygrid->nghost[dir] + mygrid->xproc[dir]*np_int[dir];
+    gend[dir] = mygrid->nghost[dir] + (mygrid->xproc[dir]+1)*np_int[dir];
+
+    // Local start and end of current datablock
+    xbeg[dir] = gridHost.xl[dir](gbeg[dir]);
+    xend[dir] = gridHost.xr[dir](gend[dir]-1);
+  }
+
+
+  // Allocate the required fields (only a limited set for a datablock from a subgrid)
+  std::string label;
+  for(int dir = 0 ; dir < 3 ; dir++) {
+    label = "DataBlock_x" + std::to_string(dir);
+    x[dir] = IdefixArray1D<real>(label, np_tot[dir]);
+
+    label = "DataBlock_xr" + std::to_string(dir);
+    xr[dir] = IdefixArray1D<real>(label,np_tot[dir]);
+
+    label = "DataBlock_xl" + std::to_string(dir);
+    xl[dir] = IdefixArray1D<real>(label,np_tot[dir]);
+
+    label = "DataBlock_dx" + std::to_string(dir);
+    dx[dir] = IdefixArray1D<real>(label,np_tot[dir]);
+
+    label = "DataBlock_xgc" + std::to_string(dir);
+    xgc[dir] = IdefixArray1D<real>(label,np_tot[dir]);
+
+    label = "DataBlock_A" + std::to_string(dir);
+    A[dir] = IdefixArray3D<real>(label,
+                                 np_tot[KDIR]+KOFFSET, np_tot[JDIR]+JOFFSET, np_tot[IDIR]+IOFFSET);
+  }
+
+  dV = IdefixArray3D<real>("DataBlock_dV",np_tot[KDIR],np_tot[JDIR],np_tot[IDIR]);
+
+#if GEOMETRY == SPHERICAL
+  rt = IdefixArray1D<real>("DataBlock_rt",np_tot[IDIR]);
+  sinx2m = IdefixArray1D<real>("DataBlock_sinx2m",np_tot[JDIR]);
+  tanx2m = IdefixArray1D<real>("DataBlock_tanx2m",np_tot[JDIR]);
+  sinx2 = IdefixArray1D<real>("DataBlock_sinx2",np_tot[JDIR]);
+  tanx2 = IdefixArray1D<real>("DataBlock_tanx2",np_tot[JDIR]);
+  dmu = IdefixArray1D<real>("DataBlock_dmu",np_tot[JDIR]);
+#endif
+
+  // Initialize our sub-domain
+  this->ExtractSubdomain();
+
+  // Initialize the geometry
+  this->MakeGeometry();
+
+  idfx::popRegion();
+}
+
+
 void DataBlock::ResetStage() {
   this->hydro->ResetStage();
   if(haveDust) {

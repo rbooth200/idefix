@@ -5,13 +5,8 @@
 // Licensed under CeCILL 2.1 License, see COPYING for more information
 // ***********************************************************************************
 
-// ***********************************************************************************
-// Idefix MHD astrophysical code
-// Copyright(C) Geoffroy R. J. Lesur <geoffroy.lesur@univ-grenoble-alpes.fr>
-// and other code contributors
-// Licensed under CeCILL 2.1 License, see COPYING for more information
 // Module contributed by Alex Ziampras, then at Queen Mary University of London
-// ***********************************************************************************
+// Modified by Richard Booth, then at University of Leeds
 
 #ifndef RADIATION_FLD_HPP_
 #define RADIATION_FLD_HPP_
@@ -24,6 +19,9 @@
 #include "idefix.hpp"
 #include "input.hpp"
 #include "iterativesolver.hpp"
+#include "boundary_parser.hpp"
+
+#include "multigrid.hpp"
 
 #ifdef WITH_MPI
 #include "mpi.hpp"
@@ -34,59 +32,37 @@ class DataBlock;
 class FluxLimitedDiffusion;
 class TwoTemperatureFLD;
 class MultiSpeciesFLD;
+class StencilMatrix;
 
-class FLDMatrix {
- public:
-  friend class FluxLimitedDiffusion;
-  friend class TwoTemperatureFLD;
-  friend class MultiSpeciesFLD;
-
-  // Types of boundary which can be treated
-  enum RadiationBoundaryType { periodic, dirichlet, neumann, userdef, internalradiation, axis };
-
-  // userdef boundary.
-  using UserDefBoundaryFunc = void (*)(DataBlock&, int dir, BoundarySide side, const real t,
-                                       IdefixArray3D<real>& arr);
-
-  FLDMatrix() = default;
-  FLDMatrix(Input& input, DataBlock*);
-
-  // Enforce boundary conditions in a specific dir, side, following boundary type
-  // and for the specified array
-  void EnforceBoundary(int dir, BoundarySide side, RadiationBoundaryType type, IdefixArray3D<real>&,
-                       bool apply_physical);
-  void SetBoundaries(IdefixArray3D<real>&,
-                     bool apply_physical = false);  // Set the proper boundaries for the given array
-
-  void EnrollUserDefBoundary(UserDefBoundaryFunc);  // Enroll user-defined boundary conditions
-
-  // User defined Boundary conditions
-  bool haveUserDefBoundary{false};
-  // User defined opacities and flux limiter
-  UserDefBoundaryFunc userDefBoundaryFunc{NULL};
-  bool haveUserDefOpacity{false};
-
-  // The main laplacian operator
-  void operator()(IdefixArray3D<real> in, IdefixArray3D<real> laplacian);
-
- private:
-  DataBlock* data;        // My parent data object
-  IdefixArray4D<real> M;  // Matrix for the radiation solver
-
-  bool isPeriodic;  // Periodicity status of the density distribution // Alex: What do I need this
-                    // for?
-  std::array<RadiationBoundaryType, 3> lbound;  // Boundary condition to the left
-  std::array<RadiationBoundaryType, 3> rbound;  // Boundary condition to the right
-  std::array<real, 3> lvalue;                   // Boundary value to the left
-  std::array<real, 3> rvalue;                   // Boundary value to the right
+struct RadiationBoundary {
+  std::array<RadiationBoundaryType, 3> lbound, rbound;
+  std::array<real, 3> lvalue, rvalue;
 
   bool isTwoPi{false};
 
-#ifdef WITH_MPI
-  MPI_Comm originComm;        ///< MPI communicator used by the origin boundary condition
-  IdefixArray4D<real> arr4D;  // Intermediate array for boundary handling
-#endif
+  std::array<bool, 3> isPeriodic() const {
+    std::array<bool, 3> periodic;
+    for (int d = 0; d < 3; d++) {
+      periodic[d] = (lbound[d] == RadiationBoundaryType::periodic) &&
+                    (rbound[d] == RadiationBoundaryType::periodic);
+    }
+    return periodic;
+  }
 };
+
+
+class MultiGridPreconditioner {
+ public:
+  explicit MultiGridPreconditioner(MultiGrid* mg=nullptr) : multigrid(mg) {}
+
+  void operator()(IdefixArray3D<real>& in, IdefixArray3D<real>& out) {
+    multigrid->Solve(out, in);
+  }
+
+ private:
+  MultiGrid* multigrid;
+};
+
 
 class FluxLimitedDiffusion {
  public:
@@ -113,12 +89,16 @@ class FluxLimitedDiffusion {
   void InitSolver();  // (Re)initialisation of the solver for a given density distribution
   virtual void FillUtils() = 0;
   virtual void FillMatrixCouplingTerms() = 0;
+  void FillMatrix();
 
-  void PreconditionMatrix();  // For preconditioning versions
-  void PreconditionErad(bool undo = false);
+
+  bool haveMultiGrid{false};  // Whether to use multigrid preconditioner
+  std::unique_ptr<MultiGrid> multigrid;
+  void setup_multigrid_precond();  // Setup multigrid preconditioner
+  MultiGridPreconditioner mgPrecond;  // Multigrid preconditioner
+
 
   void FillFluxLimiter(IdefixArray4D<real> rho_kappaR, IdefixArray3D<real> lambda);
-  void FillMatrixTransportTerms();
 
   virtual void UpdatePressure() = 0;  // Update pressure with new radiation field
   void SolveSystem();                 // Solve Radiation equation
@@ -131,6 +111,12 @@ class FluxLimitedDiffusion {
       _ComputeRadiationPressureSourceTerm(dt, fluid->instanceNumber + 1, update_Vc);
     }
   }
+
+  // Enforce boundary conditions in a specific dir, side, following boundary type
+  // and for the specified array
+  void SetBoundaries(IdefixArray3D<real>&);  // Set the proper boundaries for the given array
+  void EnforceBoundary(int dir, BoundarySide side, IdefixArray3D<real>&);
+
 
   void EnrollUserDefBoundary(UserDefBoundaryFunc);  // Enroll user-defined boundary conditions
 
@@ -148,10 +134,6 @@ class FluxLimitedDiffusion {
 
   IdefixArray3D<real> Erad;  // Radiation energy
 
-#ifdef WITH_MPI
-  Mpi mpi;  // Mpi object when WITH_MPI is set
-#endif
-
   real currentError{0};  // last error of the iterative solver
   int nsteps{0};         // # of steps of the latest iteration
   double elapsedTime;    // time spent solving radiation
@@ -168,28 +150,28 @@ class FluxLimitedDiffusion {
 
  protected:
   DataBlock* data;              // My parent data object
-  IdefixArray3D<real> precond;  // Diagonal preconditioner
-  IdefixArray3D<real> rhs;      // Right hand side -> same units as Erad
-  IdefixArray3D<real> nu;       // λ c dt / (kR ρ) -> diffusivity
 
   real dt;  // CFL timestep
 
-  IterativeSolver<FLDMatrix>* iterativeSolver;
-  std::unique_ptr<FLDMatrix> FLD_matrix;
+  IdefixArray3D<real> nu;   // diffusivity
+  IdefixArray3D<real> diag;  // Diagonal elements of the matrix
+  IdefixArray3D<real> rhs;   // Right hand side -> same units as Erad
 
-  bool isPeriodic;  // Periodicity status of the density distribution // Alex: What do I need this
-                    // for?
-  std::array<FLDMatrix::RadiationBoundaryType, 3> lbound;  // Boundary condition to the left
-  std::array<FLDMatrix::RadiationBoundaryType, 3> rbound;  // Boundary condition to the right
-  std::array<real, 3> lvalue;                              // Boundary value to the left
-  std::array<real, 3> rvalue;                              // Boundary value to the right
-                               // Warning : might differ from (M)HD solver !
+  std::unique_ptr<IterativeSolver<StencilMatrix>> iterativeSolver;
+  std::unique_ptr<StencilMatrix> FLD_matrix;
 
   RadiationSolver solver;           // The solver  used to solve Poisson
   OpacityType opacityType;          // Type of opacity
   FluxLimiterType fluxLimiterType;  // Type of flux limiter
 
-  bool havePreconditioner{false};        // Use of preconditioner (or not)
+  RadiationBoundary rad_boundary;  // Radiation boundary conditions
+
+  bool isTwoPi{false};
+
+#ifdef WITH_MPI
+  Mpi mpi;                    ///< MPI communicatior
+#endif
+
   bool haveInitialisedRadiation{false};  // whether the radiation field has already been initialised
   int num_species{1};
 };

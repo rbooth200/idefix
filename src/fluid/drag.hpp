@@ -138,8 +138,8 @@ Drag::Drag(Input &input, Fluid<Phys> *hydroin):
 
     // Check whether the dust has a temperature. If so, store the heat capacity and thermal
     // accommodation coefficient
-    if (input.GetOrSet<bool>(blockName,"have_energy",0, false)){
-      this->have_energy = true ;
+    if (input.GetOrSet<bool>(blockName,"have_energy",0, false)) {
+      this->have_energy = true;
       this->cV = input.Get<real>(blockName,"cV",0);
       this->alpha_coll = input.Get<real>(blockName,"alpha_coll",0);
 
@@ -148,8 +148,8 @@ Drag::Drag(Input &input, Fluid<Phys> *hydroin):
                      "the dust fluid has energy");
       }
     } else {
-      this->have_energy = false ;
-      this->cV = -1 ;
+      this->have_energy = false;
+      this->cV = -1;
       this->alpha_coll = 0;
     }
 

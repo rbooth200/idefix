@@ -8,7 +8,7 @@ static real T, rho0, d2g, amp, drho[4], dvel[4], dT[4], dEr[2];
 static std::string out_file;
 
 Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
-  
+
   T =  input.Get<real>("Setup", "T", 0) / idfx::units.GetKelvin();
   rho0 = input.Get<real>("Setup", "rho", 0);
   d2g = input.Get<real>("Setup", "d2g", 0);
@@ -21,7 +21,7 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
         dEr[i] = input.Get<real>("Setup", "dEr", i);
   }
   amp = input.Get<real>("Setup", "amp", 0);
-  
+
   output.EnrollAnalysis(&MakeAnalysis);
   out_file = input.Get<std::string>("Output", "dmp_dir", 0) + "/analysis.txt";
 
@@ -32,13 +32,13 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
 
 void Setup::InitFlow(DataBlock &data) {
     DataBlockHost d(data);
-    
+
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
 
     const real cs = std::sqrt(T/mu) ;
     const real kx = 2*M_PI ;
-    
+
     for(int k = 0; k < d.np_tot[KDIR]; k++) {
         for(int j = 0; j < d.np_tot[JDIR]; j++) {
             for(int i = 0; i < d.np_tot[IDIR]; i++) {
@@ -84,7 +84,7 @@ void MakeAnalysis(DataBlock & data) {
   d.SyncFromDevice();
 
   f << std::setprecision(12);
-  f << data.t << " " 
+  f << data.t << " "
     << d.Vc(RHO,k,j,i) << " " << d.Vc(VX1,k,j,i) << " " << mu * d.Vc(PRS,k,j,i) / d.Vc(RHO,k,j,i) << " "
     << d.dustVc[0](RHO,k,j,i) << " " << d.dustVc[0](VX1,k,j,i) << " " << d.dustVc[0](TRD,k,j,i) << " "
     << d.Erad(k,j,i) << "\n";

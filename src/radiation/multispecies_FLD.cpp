@@ -6,6 +6,8 @@
 // Licensed under CeCILL 2.1 License, see COPYING for more information
 // ***********************************************************************************
 
+// Module contributed by Richard Booth, then at University of Leeds
+
 #include <string>
 #include <vector>
 
@@ -176,7 +178,7 @@ void MultiSpeciesFLD::FillUtils() {
   int iend = data->end[IDIR];
 
   // see FillFluxLimiter for explanation: we need nu in the ghost cells
-  const int pad = this->havePreconditioner + 1;
+  const int pad = FLD_matrix->havePreconditioner + 1;
   D_EXPAND(ibeg -= pad; iend += pad; , jbeg -= pad; jend += pad; , kbeg -= pad; kend += pad;)
 
   // Aliases for temporary arrays
@@ -314,10 +316,10 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
 
   // If preconditioning, we need the diagonal matrix elements in the ghost cells.
   // See FillFluxLimiter for explanation.
-  const int pad = this->havePreconditioner;
+  const int pad = FLD_matrix->havePreconditioner;
   D_EXPAND(ibeg -= pad; iend += pad; , jbeg -= pad; jend += pad; , kbeg -= pad; kend += pad;)
 
-  IdefixArray4D<real> M = FLD_matrix->M;
+  IdefixArray3D<real> diag = this->diag;
   IdefixArray4D<real> Z = this->radZ;
   IdefixArray3D<real> cV_eff = this->cV_eff;
   IdefixArray3D<real> u_eff = this->u_eff;
@@ -331,7 +333,7 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
 
   idefix_for("CouplingGas", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA(int k, int j, int i) {
-        M(0, k, j, i) = 1 + dt * code_c * k_eff(k, j, i) * cV_eff(k, j, i) / Z(0, k, j, i);
+        diag(k, j, i) = 1 + dt * code_c * k_eff(k, j, i) * cV_eff(k, j, i) / Z(0, k, j, i);
       });
 
   for (int s = 1; s < num_species; s++) {
@@ -342,7 +344,7 @@ void MultiSpeciesFLD::FillMatrixCouplingTerms() {
       KOKKOS_LAMBDA(int k, int j, int i) {
           real rho = Vc(RHO, k, j, i);
 
-          M(0, k, j, i) += dt * code_c * rho * cV * kappaP(s, k, j, i) / Z(s, k, j, i);
+          diag(k, j, i) += dt * code_c * rho * cV * kappaP(s, k, j, i) / Z(s, k, j, i);
         });
   }
 }

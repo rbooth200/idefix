@@ -14,12 +14,21 @@
 
 //#define DEBUG_BICGSTAB
 
+class NoPreconditioner {
+ public:
+  void operator()(IdefixArray3D<real> &in, IdefixArray3D<real> &out) {
+    Kokkos::deep_copy(out, in);
+  }
+};
+
 // The bicgstab derives from the iterativesolver class
-template <class T>
+template <class T, class Preconditioner = NoPreconditioner>
 class Bicgstab : public IterativeSolver<T> {
  public:
   Bicgstab(T &op, real error, int maxIter,
-           std::array<int,3> ntot, std::array<int,3> beg, std::array<int,3> end);
+           std::array<int,3> ntot, std::array<int,3> beg, std::array<int,3> end,
+           Preconditioner* precond = nullptr);
+
 
   int Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs);
 
@@ -38,11 +47,15 @@ class Bicgstab : public IterativeSolver<T> {
   IdefixArray3D<real> work1; // work array
   IdefixArray3D<real> work2; // work array
   IdefixArray3D<real> work3; // work array
+  IdefixArray3D<real> work4; // work array
+  Preconditioner* precond; // Preconditioner object
 };
 
-template <class T>
-Bicgstab<T>::Bicgstab(T &op, real error, int maxiter,
-            std::array<int,3> ntot, std::array<int,3> beg, std::array<int,3> end) :
+template <class T, class Preconditioner>
+Bicgstab<T, Preconditioner>::Bicgstab(
+            T &op, real error, int maxiter,
+            std::array<int,3> ntot, std::array<int,3> beg, std::array<int,3> end,
+            Preconditioner* precond) :
             IterativeSolver<T>(op, error, maxiter, ntot, beg, end) {
   // BICGSTAB scalars initialisation
   this->rho = 1.0;
@@ -70,10 +83,17 @@ Bicgstab<T>::Bicgstab(T &op, real error, int maxiter,
   this->work3 = IdefixArray3D<real> ("WorkingArray3", this->ntot[KDIR],
                                                       this->ntot[JDIR],
                                                       this->ntot[IDIR]);
+
+  this->precond = precond;
+  if (this->precond != nullptr) {
+    this->work4 = IdefixArray3D<real> ("WorkingArray4", this->ntot[KDIR],
+                                                        this->ntot[JDIR],
+                                                        this->ntot[IDIR]);
+  }
 }
 
-template <class T>
-int Bicgstab<T>::Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs) {
+template <class T, class Preconditioner>
+int Bicgstab<T, Preconditioner>::Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs) {
   idfx::pushRegion("Bicgstab::Solve");
   this->solution = guess;
   this->rhs = rhs;
@@ -86,7 +106,7 @@ int Bicgstab<T>::Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs) {
   int n = 0;
   while(this->convStatus != true && n < this->maxiter) {
   #ifdef DEBUG_BICGSTAB
-    std::cout << "iter= "<< n << " ; ";
+    idfx::cout << "iter= "<< n << " ; ";
   #endif
     this->PerformIter();
     if(this->restart) {
@@ -112,8 +132,8 @@ int Bicgstab<T>::Solve(IdefixArray3D<real> &guess, IdefixArray3D<real> &rhs) {
   return(n);
 }
 
-template <class T>
-void Bicgstab<T>::InitSolver() {
+template <class T, class Preconditioner>
+void Bicgstab<T, Preconditioner>::InitSolver() {
   idfx::pushRegion("Bicgstab::InitSolver");
   // Residual initialisation
   this->SetRes();
@@ -130,8 +150,8 @@ void Bicgstab<T>::InitSolver() {
   idfx::popRegion();
 }
 
-template <class T>
-void Bicgstab<T>::PerformIter() {
+template <class T, class Preconditioner>
+void Bicgstab<T, Preconditioner>::PerformIter() {
   idfx::pushRegion("Bicgstab::PerformIter");
 
   // Loading needed attributes
@@ -144,6 +164,7 @@ void Bicgstab<T>::PerformIter() {
   IdefixArray3D<real> v = this->work1; // Working array, for laplacian dir calculation
   IdefixArray3D<real> s = this->work2; // Working array, for intermediate dir calculation
   IdefixArray3D<real> t = this->work3; // Working array, for laplacian intermediate dir calculation
+  IdefixArray3D<real> z = this->work4; // Working array, for preconditioned dir calculation
   real omega;
   real &alpha = this->alpha;
   real &rhoOld = this->rho;
@@ -196,7 +217,13 @@ void Bicgstab<T>::PerformIter() {
   // From now dir is updated
 
   // ***** Step 4.
-  this->linearOperator(dir, v);
+  if (this->precond != nullptr) {
+    this->precond->operator()(dir, z);
+  } else {
+    z = dir;
+  }
+
+  this->linearOperator(z, v);
 
   // from now v is updated (laplacian of dir)
 
@@ -220,7 +247,7 @@ void Bicgstab<T>::PerformIter() {
   // Assumes solution = x_i-1
   idefix_for("FirstUpdatePot", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
-      solution(k,j,i) = solution(k,j,i) + alpha * dir(k,j,i);
+      solution(k,j,i) = solution(k,j,i) + alpha * z(k,j,i);
     });
 
   // From here solution = h_i
@@ -233,7 +260,7 @@ void Bicgstab<T>::PerformIter() {
   //this->SetRes();
   idefix_for("UpdateRes", kbeg, kend, jbeg, jend, ibeg, iend,
     KOKKOS_LAMBDA (int k, int j, int i) {
-      res(k,j,i) = res(k,j,i) - alpha * v(k,j,i);
+      res(k,j,i) = s(k,j,i) = res(k,j,i) - alpha * v(k,j,i);
     });
 
   // Test intermediate guess h_i
@@ -242,15 +269,23 @@ void Bicgstab<T>::PerformIter() {
   // The loop continues if no convergence
   if(this->convStatus == false) {
     // ***************** Step. 8.
-    idefix_for("FillIntermediateDir", kbeg, kend, jbeg, jend, ibeg, iend,
-      KOKKOS_LAMBDA (int k, int j, int i) {
-        s(k,j,i) = s(k,j,i) - alpha * v(k,j,i); // s in RHS is oldRes before update
-      });
+    //idefix_for("FillIntermediateDir", kbeg, kend, jbeg, jend, ibeg, iend,
+    //  KOKKOS_LAMBDA (int k, int j, int i) {
+    //    s(k,j,i) = s(k,j,i) - alpha * v(k,j,i); // s in RHS is oldRes before update
+    //  });
 
     // From here s is updated
 
     // ************** Step 9.
-    this->linearOperator(s, t);
+    if (this->precond != nullptr) {
+      z = this->work4; // z is recycled to store preconditioned s
+      this->precond->operator()(s, z);
+    } else {
+      z = s;
+    }
+
+
+    this->linearOperator(z, t);
 
     // From here t is updated
 
@@ -274,7 +309,7 @@ void Bicgstab<T>::PerformIter() {
     // solution is h_i from step 6.
     idefix_for("SecondUpdatePot", kbeg, kend, jbeg, jend, ibeg, iend,
       KOKKOS_LAMBDA (int k, int j, int i) {
-        solution(k,j,i) = solution(k,j,i) + omega * s(k,j,i);
+        solution(k,j,i) = solution(k,j,i) + omega * z(k,j,i);
       });
 
     // From here, solution = x_i
@@ -320,8 +355,8 @@ void Bicgstab<T>::PerformIter() {
 
 
 
-template <class T>
-void Bicgstab<T>::ShowConfig() {
+template <class T, class Preconditioner>
+void Bicgstab<T, Preconditioner>::ShowConfig() {
   idfx::pushRegion("Bicgstab::ShowConfig");
   idfx::cout << "Bicgstab: TargetError: " << this->targetError << std::endl;
   idfx::cout << "Bicgstab: Maximum iterations: " << this->maxiter << std::endl;
