@@ -331,8 +331,6 @@ void SphericalShortChar::_build_ray_weights() {
 }
 
 int SphericalShortChar::_get_cell_order(int i, int j, HostRayInfo& host_rays) {
-  idfx::RegionWrapper region("SphericalShortChar::_get_cell_order");
-
   // Recursively walk the list of rays to the boundary,
   // storing the order of any other cells we discover along
   // the way.
