@@ -507,7 +507,10 @@ void MultiGrid::Prolongate(const IdefixArray3D<real> q_c, IdefixArray3D<real> q_
     ibeg = 0;
     iend = grids[level].np_tot[IDIR];
   } else {
-    Kokkos::deep_copy(q_tmp, q_c);
+    idefix_for("prolongate_copy", kbeg, kend, jbeg, jend, ibeg, iend,
+      KOKKOS_LAMBDA(int k, int j, int i) {
+        q_tmp(k,j,i) = q_c(k,j,i);
+      });
   }
 
   if (DIMENSIONS > 1) {
