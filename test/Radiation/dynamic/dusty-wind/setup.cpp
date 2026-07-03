@@ -4,7 +4,17 @@
 #include "units.hpp"
 #include "opacity.hpp"
 #include "potential.hpp"
+#include "dumpImage.hpp"
 
+#if __has_include(<filesystem>)
+  #include <filesystem> // NOLINT [build/c++17]
+  namespace fs = std::filesystem;
+#elif __has_include(<experimental/filesystem>)
+  #include <experimental/filesystem>
+  namespace fs = std::experimental::filesystem;
+#else
+  #error "Missing the <filesystem> header."
+#endif
 
 /* TODO:
  - Radiation Pressure
@@ -13,7 +23,10 @@
 
 void MyRadiationBoundary(DataBlock &data, int dir, BoundarySide side, real t, IdefixArray3D<real> &Erad);
 void Analysis(DataBlock & data);
+void Restart(DataBlock &data);
 
+static int restart = 0;
+static bool do_restart_surface = false;
 static bool surface_condensation = true;
 static bool radiation_pressure = false;
 static double depletion_factor = 1.0;
@@ -22,7 +35,6 @@ static real R_Hill, R_Bondi, R_p;
 static real T0, d2g, C_surf;
 static IdefixArray2D<real> T_surf, F_surf;
 std::string surf_base;
-std::array<int, 3> n;
 
 // Setup the condensation parameters
 //    Perez-Becker & Chiang (2013)
@@ -231,31 +243,6 @@ void ApplyCondensation(DataBlock& data, const real t, const real dt) {
     });
   }
 
-  /*
-  int imax[2] = {0,0}, jmax[2] = {0,0}, kmax[2] = {0,0};
-  real max[2] = {0,0};
-  for (int k=0; k < data.np_tot[KDIR]; k++)
-   for (int j=0; j < data.np_tot[JDIR]; j++)
-     for (int i=0; i < data.np_tot[IDIR]; i++) {
-
-      real x = fabs(Gas(VX1, k,j,i)) + Gas(PRS, k,j,i)/Gas(RHO, k,j,i);
-      if (x > max[0]) {
-        max[0] = x;
-        imax[0] = i;
-        jmax[0] = j;
-        kmax[0] = k;
-      }
-      x = fabs(Dust(VX1, k,j,i));
-      if (x > max[1]) {
-        max[1] = x;
-        imax[1] = i;
-        jmax[1] = j;
-        kmax[1] = k;
-      }
-     }
-  std::cout << " Max velocities after condensation: Gas " << max[0] << " at (" << imax[0] << "," << jmax[0] << "," << kmax[0] << ")"
-            << " Dust " << max[1] << " at (" << imax[1] << "," << jmax[1] << "," << kmax[1] << ")" <<std::endl;
-  */
 }
 
 void MyColumnBoundary(DataBlock* data, IdefixArray3D<real> column) {
@@ -368,7 +355,20 @@ Setup::Setup(Input &input, Grid &grid, DataBlock &data, Output &output) {
   C_surf = input.GetOrSet<real>("Setup", "surface_heat_capacity", 0, 3.0) / idfx::units.GetLength();
   surface_condensation = input.GetOrSet<bool>("Setup", "surface_condensation", 0, true);
 
-  surf_base = input.Get<std::string>("Output", "dmp_dir", 0) + "/surface_";
+  std::string dmp_dir = "./";
+  if(input.CheckEntry("Output", "dmp_dir") >= 0) {
+    dmp_dir = input.Get<std::string>("Output", "dmp_dir", 0);
+  }
+  surf_base = (fs::path(dmp_dir) / "surface_").string();
+
+  do_restart_surface = false;
+  if(input.restartRequested) {
+    if(!input.forceInitRequested) {
+      IDEFIX_ERROR("Surface restart requires -force_init when using -restart.");
+    }
+    restart = input.restartFileNumber;
+    do_restart_surface = input.forceInitRequested;
+  }
 
   real GM = idfx::units.G / (idfx::units.GetLength() * pow(idfx::units.GetVelocity(), 2));
 
@@ -432,8 +432,6 @@ void Setup::InitFlow(DataBlock &data) {
     const real mu = data.radiation->mu;
     const real aR = data.radiation->code_aR;
 
-    n = d.np_tot;
-
     // Set the surface temperature and irradiation
     T_surf = IdefixArray2D<real> ("Surface_temperature",  d.np_tot[KDIR],
                                                           d.np_tot[JDIR]);
@@ -491,6 +489,10 @@ void Setup::InitFlow(DataBlock &data) {
 
     // Send it all, if needed
     d.SyncToDevice();
+
+    if(do_restart_surface) {
+      Restart(data);
+    }
 }
 
 Setup::~Setup() {
@@ -525,4 +527,64 @@ void Analysis(DataBlock & data) {
             f << j << " " << k << " " << T_host(k,j) << " " << F_host(k,j) << "\n";
       }
     }
+}
+
+void Restart(DataBlock &data) {
+
+  const int kbeg = data.beg[KDIR];
+  const int kend = data.end[KDIR];
+  const int jbeg = data.beg[JDIR];
+  const int jend = data.end[JDIR];
+  const int nk_tot = data.np_tot[KDIR];
+  const int nj_tot = data.np_tot[JDIR];
+
+  // Now read the surface temperature and irradiation
+  IdefixHostArray2D<real> T_host = Kokkos::create_mirror_view(T_surf);
+  IdefixHostArray2D<real> F_host = Kokkos::create_mirror_view(F_surf);
+  IdefixHostArray2D<int> fill_count("surface_fill_count", nk_tot, nj_tot);
+
+  for(int k = 0; k < nk_tot; k++) {
+    for(int j = 0; j < nj_tot; j++) {
+      fill_count(k, j) = 0;
+    }
+  }
+
+  std::ifstream f(surf_base + std::to_string(restart) + ".txt");
+  if (!f.is_open()) {
+    IDEFIX_ERROR("Could not open surface file for restart");
+  }
+  std::string line;
+  std::getline(f, line); // skip header
+  while (std::getline(f, line)) {
+    if(line.empty()) continue;
+    std::istringstream iss(line);
+    int j, k;
+    real T, F;
+    if (!(iss >> j >> k >> T >> F)) {
+      IDEFIX_ERROR("Malformed line in surface restart file");
+    }
+
+    // The restart file only contains active cells written by Analysis.
+    if(j < jbeg || j >= jend || k < kbeg || k >= kend) {
+      IDEFIX_ERROR("Out-of-range index in surface restart file");
+    }
+
+    T_host(k, j) = T;
+    F_host(k, j) = F;
+    fill_count(k, j)++;
+  }
+
+  // Validate only active zones; ghost-zone counters are intentionally ignored.
+  for(int k = kbeg; k < kend; k++) {
+    for(int j = jbeg; j < jend; j++) {
+      if(fill_count(k, j) != 1) {
+        IDEFIX_ERROR("Surface restart file does not fill each cell exactly once");
+      }
+    }
+  }
+
+  Kokkos::deep_copy(T_surf, T_host);
+  Kokkos::deep_copy(F_surf, F_host);
+
+  surf_num = restart + 1;
 }
