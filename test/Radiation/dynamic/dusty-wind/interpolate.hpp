@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <vector>
+#include "idefix.hpp"
 
 /* _PchipInterpolatorBase
  *
@@ -21,6 +22,9 @@ class _PchipInterpolatorBase {
     _PchipInterpolatorBase(std::vector<double> x, std::vector<value_type> y)
      : _x(x), _y(y) {
         assert(_x.size() == _y.size());
+        if(_x.size() < 3) {
+            IDEFIX_ERROR("PchipInterpolator requires at least 3 points");
+        }
 
         _compute_deltas();
         _compute_coeffs();
@@ -32,6 +36,9 @@ class _PchipInterpolatorBase {
         static_assert(sizeof...(ys) == dim,
                       "PchipInterpolator: Number of arrays must match number "
                       "of dimensions");
+        if(_x.size() < 3) {
+            IDEFIX_ERROR("PchipInterpolator requires at least 3 points");
+        }
 
         // Pack the arrays
         int Npts = _x.size();
