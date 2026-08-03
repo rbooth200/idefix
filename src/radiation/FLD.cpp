@@ -1228,6 +1228,15 @@ void TwoTemperatureFLD::FillUtils() {
   const real cV = this->cV;
 
   for (int s = 0; s < num_species; s++) {
+    IdefixArray4D<real> Vc_s;
+    if (haveIrradiation) {
+      if (s > 0) {
+        Vc_s = data->dust[s - 1]->Vc;
+      } else {
+        Vc_s = data->hydro->Vc;
+      }
+    }
+
     idefix_for(
         "FillUtils", kbeg, kend, jbeg, jend, ibeg, iend, KOKKOS_LAMBDA(int k, int j, int i) {
           real rho = Vc(RHO, k, j, i);
@@ -1244,8 +1253,9 @@ void TwoTemperatureFLD::FillUtils() {
           }
 
           if (haveIrradiation) {
+            real rho_s = Vc_s(RHO, k, j, i);
             rhs(k, j, i) +=
-                Sirrad(s, k, j, i) * rho * dt * 4 * radX(0, k, j, i) / (1 + 4 * radX(0, k, j, i));
+              Sirrad(s, k, j, i) * rho_s * dt * 4 * radX(0, k, j, i) / (1 + 4 * radX(0, k, j, i));
           }
         });
   }
