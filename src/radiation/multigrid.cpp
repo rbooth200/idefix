@@ -192,6 +192,7 @@ void MultiGrid::Solve(IdefixArray3D<real> x, IdefixArray3D<real> b) {
   // Scale the input array if needed
   IdefixArray3D<real> b_scaled = grids[0].rhs;
   if (scale_system==ScalingType::LEFT || scale_system==ScalingType::SYMMETRIC) {
+    IdefixArray3D<real> scale = this->scale;
     idefix_for("ScaleRHS", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
       KOKKOS_LAMBDA(int k, int j, int i) {
         b_scaled(k,j,i) = b(k,j,i) * scale(k,j,i);
@@ -217,6 +218,7 @@ void MultiGrid::Solve(IdefixArray3D<real> x, IdefixArray3D<real> b) {
 
   // Scale the output if needed.
   if (scale_system==ScalingType::RIGHT || scale_system==ScalingType::SYMMETRIC) {
+    IdefixArray3D<real> scale = this->scale;
     idefix_for("UnscaleSolution",
       0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
       KOKKOS_LAMBDA(int k, int j, int i) {

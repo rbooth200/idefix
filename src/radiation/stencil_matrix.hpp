@@ -39,6 +39,7 @@ class StencilMatrix {
  public:
   StencilMatrix() = default;
   StencilMatrix(DataBlock* data, std::array<bool, 3> isPeriodic={false, false, false});
+  void init();
 
   void SetBoundaries(IdefixArray3D<real> arr);
   void ApplyPeriodicAxisBoundariesOnly(IdefixArray3D<real> arr);
