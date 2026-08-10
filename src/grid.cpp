@@ -525,15 +525,21 @@ void Grid::CoarsenMe(CoarseGrid *coarse_grid) {
       auto xl_f = this->xl[dir];
       auto dx_f = this->dx[dir];
 
-      // Fill the interior of the grid
-      idefix_for("coarsen_grid_interior", nghost[dir], np_tot[dir] - nghost[dir],
-        KOKKOS_LAMBDA(int i) {
-          int i_f = 2*(i-nghost[dir]) + nghost[dir];
-          xr(i) = xr_f(i_f+1);
-          xl(i) = xl_f(i_f);
-          x(i) = xr_f(i_f);
-          dx(i) = dx_f(i_f) + dx_f(i_f+1);
-      });
+      {
+        int nghost[3] = {this->nghost[0], this->nghost[1], this->nghost[2]};
+        int np_tot[3] = {this->np_tot[0], this->np_tot[1], this->np_tot[2]};
+        int np_int[3] = {this->np_int[0], this->np_int[1], this->np_int[2]};
+
+        // Fill the interior of the grid
+        idefix_for("coarsen_grid_interior", nghost[dir], np_tot[dir] - nghost[dir],
+          KOKKOS_LAMBDA(int i) {
+            int i_f = 2*(i-nghost[dir]) + nghost[dir];
+            xr(i) = xr_f(i_f+1);
+            xl(i) = xl_f(i_f);
+            x(i) = xr_f(i_f);
+            dx(i) = dx_f(i_f) + dx_f(i_f+1);
+        });
+      }
 
 
       // Fill the boundaries and the local start and end of the grid

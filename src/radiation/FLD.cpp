@@ -319,11 +319,14 @@ void FluxLimitedDiffusion::Init(Input& input, DataBlock* datain) {
                                     data->np_tot[KDIR], data->np_tot[JDIR], data->np_tot[IDIR]);
 
 
-  idefix_for(
-      "InitRadiationArrays", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
-      KOKKOS_LAMBDA(int k, int j, int i) {
-        Erad(k, j, i) = ZERO_F;
-      });
+  {
+    IdefixArray3D<real> Erad = this->Erad;
+    idefix_for(
+        "InitRadiationArrays", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
+        KOKKOS_LAMBDA(int k, int j, int i) {
+          Erad(k, j, i) = ZERO_F;
+        });
+  }
 
   // Output radiation energy density
   data->dump->RegisterVariable(this->Erad, "ERAD");
@@ -409,10 +412,12 @@ void _fill_FLD_matrix(DataBlock* data, IdefixArray4D<real> M, IdefixArray3D<real
 #endif
   )
 
-  std::array<RadiationBoundaryType, 3> lbound = rad_boundary.lbound;
-  std::array<RadiationBoundaryType, 3> rbound = rad_boundary.rbound;
-  std::array<real, 3> lvalue = rad_boundary.lvalue;
-  std::array<real, 3> rvalue = rad_boundary.rvalue;
+  RadiationBoundaryType lbound[3] = 
+      {rad_boundary.lbound[0], rad_boundary.lbound[1], rad_boundary.lbound[2]};
+  RadiationBoundaryType rbound[3] = 
+      {rad_boundary.rbound[0], rad_boundary.rbound[1], rad_boundary.rbound[2]};
+  real lvalue[3] = {rad_boundary.lvalue[0], rad_boundary.lvalue[1], rad_boundary.lvalue[2]};
+  real rvalue[3] = {rad_boundary.rvalue[0], rad_boundary.rvalue[1], rad_boundary.rvalue[2]};
 
   /*
   idefix_for("Zero Matrix", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
@@ -630,7 +635,7 @@ void FluxLimitedDiffusion::setup_multigrid_precond() {
     IdefixArray3D<real> dV_f = gf.data->dV;
     IdefixArray3D<real> dV_c = gc.data->dV;
 
-    std::array<bool, 3> coarsend = gc.coarsened;
+    bool coarsend[3] = {gc.coarsened[0], gc.coarsened[1], gc.coarsened[2]};
 
     int ibeg = gc.data->beg[IDIR], iend = gc.data->end[IDIR];
     int jbeg = gc.data->beg[JDIR], jend = gc.data->end[JDIR];

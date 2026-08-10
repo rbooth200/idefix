@@ -18,10 +18,15 @@ void EnforcePeriodicBoundary(DataBlock*, int, BoundarySide, bool, bool, IdefixAr
 StencilMatrix::StencilMatrix(DataBlock* data, std::array<bool, 3> isPeriodic)
     : data(data), isPeriodic(isPeriodic) {
 
+  init() ;
+}
+
+void StencilMatrix::init() {
   // Fill the memory:
-  M = IdefixArray4D<real>("M", 1 + 2 * DIMENSIONS,
+  this->M = IdefixArray4D<real>("M", 1 + 2 * DIMENSIONS,
                               data->np_tot[KDIR], data->np_tot[JDIR], data->np_tot[IDIR]);
 
+  IdefixArray4D<real> M = this->M;
   idefix_for("Zero Matrix", 0, data->np_tot[KDIR], 0, data->np_tot[JDIR], 0, data->np_tot[IDIR],
     KOKKOS_LAMBDA(int k, int j, int i) {
       for (int d = 0; d < 1 + 2 * DIMENSIONS; d++) {
