@@ -81,10 +81,6 @@ void MG_Grid::Init() {
     isPeriodic[d] = (lbound[d] == BoundaryType::periodic) && (rbound[d] == BoundaryType::periodic);
   }
   matrix = StencilMatrix(data.get(), isPeriodic);
-
-#ifdef WITH_MPI
-  mpi.Init(data.get(), {0}, nghost.data(), data->np_int.data());
-#endif
 }
 
 

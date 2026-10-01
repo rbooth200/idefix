@@ -57,10 +57,6 @@ class MG_Grid {
  private:
   void Init();
   std::unique_ptr<Grid> _grid;  // Grid for this level
-
-#ifdef WITH_MPI
-  Mpi mpi;        ///< MPI communicatior
-#endif
 };
 
 class MultiGrid {

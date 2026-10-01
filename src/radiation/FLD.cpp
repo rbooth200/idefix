@@ -228,7 +228,7 @@ void FluxLimitedDiffusion::Init(Input& input, DataBlock* datain) {
   std::vector<int> mapVars;
   mapVars.push_back(ntarget);
 
-  this->mpi.Init(data->mygrid, {0}, this->nghost.data(), data->np_int.data());
+  this->mpi.Init(data->mygrid, {0}, data->nghost.data(), data->np_int.data());
 #endif
 
   // Update solver when provided
@@ -412,9 +412,9 @@ void _fill_FLD_matrix(DataBlock* data, IdefixArray4D<real> M, IdefixArray3D<real
 #endif
   )
 
-  RadiationBoundaryType lbound[3] = 
+  RadiationBoundaryType lbound[3] =
       {rad_boundary.lbound[0], rad_boundary.lbound[1], rad_boundary.lbound[2]};
-  RadiationBoundaryType rbound[3] = 
+  RadiationBoundaryType rbound[3] =
       {rad_boundary.rbound[0], rad_boundary.rbound[1], rad_boundary.rbound[2]};
   real lvalue[3] = {rad_boundary.lvalue[0], rad_boundary.lvalue[1], rad_boundary.lvalue[2]};
   real rvalue[3] = {rad_boundary.rvalue[0], rad_boundary.rvalue[1], rad_boundary.rvalue[2]};

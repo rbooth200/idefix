@@ -12,8 +12,13 @@
 #define RADIATION_STENCIL_MATRIX_HPP_
 
 #include <array>
+#include <memory>
 
 #include "idefix.hpp"
+
+#ifdef WITH_MPI
+#include "mpi.hpp"
+#endif
 
 class DataBlock; // Fwd declaration
 
@@ -74,7 +79,7 @@ class StencilMatrix {
   bool isScaled{false};                // Whether the matrix has been scaled to unit diagonal
 
 #ifdef WITH_MPI
-  Mpi mpi;        ///< MPI communicatior
+  std::shared_ptr<Mpi> mpi;  ///< MPI communicator (shared, as Mpi is non-copyable)
 #endif
 };
 

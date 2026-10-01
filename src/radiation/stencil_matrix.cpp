@@ -10,6 +10,8 @@
 
 #include "stencil_matrix.hpp"
 
+#include <memory>
+
 #include "boundary_utils.hpp"
 #include "dataBlock.hpp"
 
@@ -18,7 +20,7 @@ void EnforcePeriodicBoundary(DataBlock*, int, BoundarySide, bool, bool, IdefixAr
 StencilMatrix::StencilMatrix(DataBlock* data, std::array<bool, 3> isPeriodic)
     : data(data), isPeriodic(isPeriodic) {
 
-  init() ;
+  init();
 }
 
 void StencilMatrix::init() {
@@ -35,7 +37,8 @@ void StencilMatrix::init() {
   });
 
 #ifdef WITH_MPI
-  mpi.Init(data, {0}, data->nghost.data(), data->np_int.data());
+  mpi = std::make_shared<Mpi>();
+  mpi->Init(data->mygrid, {0}, data->nghost.data(), data->np_int.data());
 #endif
 }
 
@@ -240,7 +243,33 @@ void StencilMatrix::ApplyBoundariesInternal(IdefixArray3D<real> arr, bool zeroPh
       [&](int dir) {
         // MPI Exchange data when needed
   #ifdef WITH_MPI
-    MPIBoundaryExchange(data, mpi, arr4D, dir);
+    // Mpi::Exchange unpacks into both ghost layers, even on physical boundaries (where it
+    // receives from MPI_PROC_NULL), so back up the physical ghosts if we need to keep them.
+    const bool keepPhysical = !zeroPhysical && !isPeriodic[dir] &&
+                              data->mygrid->nproc[dir] > 1;
+    IdefixArray3D<real> backup;
+    if (keepPhysical) {
+      backup = IdefixArray3D<real>("StencilMatrix_ghostBackup",
+                                   data->np_tot[KDIR], data->np_tot[JDIR], data->np_tot[IDIR]);
+      Kokkos::deep_copy(backup, arr);
+    }
+
+    MPIBoundaryExchange(data, *mpi, arr4D, dir);
+
+    if (keepPhysical) {
+      for (BoundarySide side : {left, right}) {
+        const bool isPhysical = (side == left) ? (data->mygrid->xproc[dir] == 0)
+                              : (data->mygrid->xproc[dir] == data->mygrid->nproc[dir] - 1);
+        if (!isPhysical) continue;
+
+        BoundaryLoopRange range = ComputeBoundaryLoopRange(data, dir, side);
+        idefix_for("RestorePhysicalGhosts",
+          range.kbeg, range.kend, range.jbeg, range.jend, range.ibeg, range.iend,
+          KOKKOS_LAMBDA(int k, int j, int i) {
+            arr(k, j, i) = backup(k, j, i);
+          });
+      }
+    }
   #else
     (void)dir;
   #endif
