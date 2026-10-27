@@ -84,6 +84,8 @@ class FluxLimitedDiffusion {
 
   FluxLimitedDiffusion(Input&, DataBlock*);
 
+  virtual ~FluxLimitedDiffusion() = default;
+
   void Init(Input&, DataBlock*);  // Initialisation of the class attributes
   virtual void ShowConfig();      // display current configuration
   void InitSolver();  // (Re)initialisation of the solver for a given density distribution
