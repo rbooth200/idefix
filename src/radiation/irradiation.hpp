@@ -36,6 +36,8 @@ class Irradiation {
  public:
   Irradiation(Input&, DataBlock*);
 
+ virtual ~Irradiation() = default;
+
   virtual void ShowConfig();
   virtual void ComputeIrradiation() = 0;
   virtual void GetBoundaryFlux(int dir, int side, IdefixArray2D<real>) = 0;
