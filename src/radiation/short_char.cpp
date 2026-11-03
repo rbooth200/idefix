@@ -127,14 +127,14 @@ SphericalShortChar::SphericalShortChar(Input& input, DataBlock* datain)
       rho_all("Densities", num_species, data->np_tot[KDIR], data->np_tot[JDIR] + 1,
               data->np_tot[IDIR] + 1) {
 #if GEOMETRY != SPHERICAL
-  std::stringstream msg;
+  { std::stringstream msg;
   msg << "SphericalShortChar:: only works in SPHERICAL geometry";
-  IDEFIX_ERROR(msg);
+  IDEFIX_ERROR(msg); }
 #endif
 #if WITH_MPI
-  std::stringstream msg;
+  { std::stringstream msg;
   msg << "SphericalShortChar:: does not work with MPI";
-  IDEFIX_ERROR(msg);
+  IDEFIX_ERROR(msg); }
 #endif
 
   // Setup Luminosity
