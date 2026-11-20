@@ -69,13 +69,12 @@ class StencilMatrix {
   void SetPeriodic(std::array<bool, 3> isPeriodic) { this->isPeriodic = isPeriodic; }
   std::array<bool, 3> isPeriodic;  // Whether the boundary is periodic in each direction
 
+  void ApplyBoundariesInternal(IdefixArray3D<real> arr, bool zeroPhysical);
 
  protected:
   DataBlock* data;                 // My parent data object
 
-
  private:
-  void ApplyBoundariesInternal(IdefixArray3D<real> arr, bool zeroPhysical);
   bool isScaled{false};                // Whether the matrix has been scaled to unit diagonal
 
 #ifdef WITH_MPI
