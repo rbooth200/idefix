@@ -170,7 +170,7 @@ LongCharIrradiation::LongCharIrradiation(Input& input, DataBlock* datain)
     if (irrad.compare("constant") == 0) {
       radiationType = OpacityType::constant;
 
-      IdefixArray1D<real>::HostMirror L_host = Kokkos::create_mirror_view(this->radiation_field);
+      IdefixArray1D<real>::host_mirror_type L_host = Kokkos::create_mirror_view(this->radiation_field);
       for (int i = 0; i < this->num_bands; i++)
         L_host(i) = idfx::units.L_sun * input.Get<real>("Irradiation", "luminosity", i + 1);
 
