@@ -146,7 +146,7 @@ SphericalShortChar::SphericalShortChar(Input& input, DataBlock* datain)
     if (irrad.compare("constant") == 0) {
       radiationType = OpacityType::constant;
 
-      IdefixArray1D<real>::HostMirror f_host = Kokkos::create_mirror_view(this->radiation_field);
+      IdefixArray1D<real>::host_mirror_type f_host = Kokkos::create_mirror_view(this->radiation_field);
       for (int i = 0; i < this->num_bands; i++)
         f_host(i) = input.Get<real>("Irradiation", "flux", i + 1);  // in cgs units
 
@@ -386,7 +386,7 @@ void SphericalShortChar::_sort_ray_walk(HostRayInfo& host_rays) {
   _cells_per_order = std::vector<int>(_max_order, 0);
   _cells_in_order = IdefixArray2D<int>("cell_ids", shape[1] * shape[0], 2);
 
-  IdefixArray2D<int>::HostMirror cells_in_order = Kokkos::create_mirror_view(_cells_in_order);
+  IdefixArray2D<int>::host_mirror_type cells_in_order = Kokkos::create_mirror_view(_cells_in_order);
 
   // Step 3: Store the cells in order:
   int count = 0;
