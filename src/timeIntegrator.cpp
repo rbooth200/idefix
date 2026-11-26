@@ -353,17 +353,6 @@ void TimeIntegrator::Cycle(DataBlock& data) {
     // evolve dt accordingly
     data.t += data.dt;
 
-<<<<<<< HEAD
-=======
-    // Look for Nans every now and then (this actually cost a lot of time on GPUs
-    // because streams are divergent)
-    if (ncycles % checkNanPeriodicity == 0) {
-      if (data.CheckNan() > 0) {
-        throw std::runtime_error(std::string("Nan found after integration cycle"));
-      }
-    }
-
->>>>>>> f90a9d1c (Added radiation pressure to dusty-wind test problem)
     // Compute next time_step during first stage
     if (stage == 0) {
       if (!haveFixedDt) {
